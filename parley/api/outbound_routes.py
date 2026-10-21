@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from parley.api.auth import require_api_key
 from parley.config import Settings, get_settings
-from parley.core.outbound.models import CallJob, Contact, normalize_phone
+from parley.core.outbound.models import CallJob, Contact, to_e164
 from parley.core.outbound.queue import OutboundQueue
 from parley.core.outbound.worker import build_outbound_queue, enqueue_now
 
@@ -38,6 +38,11 @@ class TriggerPayload(BaseModel):
     contact: Contact
     goal: str
     metadata: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str | None = Field(default=None, max_length=200)
+
+
+DEDUPE_WINDOW = timedelta(minutes=10)
+IDEMPOTENCY_WINDOW = timedelta(hours=24)
 
 
 class DncPayload(BaseModel):
@@ -74,12 +79,29 @@ async def _verify_hmac(request: Request) -> bytes:
             detail="outbound disabled: set OUTBOUND_WEBHOOK_SECRET",
         )
     raw_body = await request.body()
+    # Signature covers "<timestamp>.<body>" so a captured request can't be replayed later.
+    ts_header = request.headers.get("X-Parley-Timestamp", "")
+    try:
+        ts = int(ts_header)
+    except ValueError:
+        raise HTTPException(
+            status_code=401, detail="Missing or invalid X-Parley-Timestamp"
+        ) from None
+    if abs(datetime.now(UTC).timestamp() - ts) > settings.outbound_signature_max_age_s:
+        raise HTTPException(status_code=401, detail="Signature timestamp too old")
     sig_header = request.headers.get("X-Parley-Signature", "")
-    digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
-    expected = f"sha256={digest}"
-    if not sig_header.startswith("sha256=") or not hmac.compare_digest(sig_header, expected):
+    signed = f"{ts}.".encode() + raw_body
+    digest = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig_header, f"sha256={digest}"):
         raise HTTPException(status_code=401, detail="Invalid signature")
     return raw_body
+
+
+def _consent_problem(contact: Contact) -> str | None:
+    # Consent must be evidenced by the caller of the API; we never invent a timestamp.
+    if contact.consent and (not contact.consent_source or contact.consent_at is None):
+        return "consent requires consent_source and consent_at"
+    return None
 
 
 @router.post("/trigger", status_code=202)
@@ -100,10 +122,31 @@ async def trigger_outbound_call(request: Request) -> JSONResponse:
         for k, v in payload.metadata.items():
             merged[str(k)] = str(v)
         contact.metadata = merged
-    if contact.consent and contact.consent_at is None:
-        contact.consent_at = now
+    problem = _consent_problem(contact)
+    if problem:
+        raise HTTPException(status_code=422, detail=problem)
+
+    if payload.idempotency_key:
+        existing = await queue.store.find_recent_job(
+            settings.tenant_id,
+            since=now - IDEMPOTENCY_WINDOW,
+            idempotency_key=payload.idempotency_key,
+        )
+    else:
+        existing = await queue.store.find_recent_job(
+            settings.tenant_id,
+            since=now - DEDUPE_WINDOW,
+            phone=contact.phone,
+            goal=payload.goal,
+        )
+    if existing is not None:
+        return JSONResponse(
+            status_code=200,
+            content={"job_id": existing.job_id, "status": existing.status, "duplicate": True},
+        )
 
     job = CallJob(
+        idempotency_key=payload.idempotency_key,
         tenant_id=settings.tenant_id,
         contact=contact,
         goal=payload.goal,
@@ -167,9 +210,9 @@ async def upload_campaign_csv(
                 if consent_at.tzinfo is None:
                     consent_at = consent_at.replace(tzinfo=UTC)
             except ValueError:
-                consent_at = base_now if consent else None
+                consent_at = None
         else:
-            consent_at = base_now if consent else None
+            consent_at = None
 
         extra_meta: dict[str, str] = {}
         for col, val in row.items():
@@ -193,6 +236,10 @@ async def upload_campaign_csv(
             contact = Contact.model_validate(contact_kwargs)
         except ValidationError:
             rejected.append({"row": row_idx, "reason": "invalid_phone"})
+            continue
+        problem = _consent_problem(contact)
+        if problem:
+            rejected.append({"row": row_idx, "reason": problem})
             continue
 
         scheduled_at = base_now + timedelta(seconds=accepted * spacing_s)
@@ -226,7 +273,16 @@ async def get_outbound_job(job_id: str, request: Request) -> dict[str, Any]:
         job = await queue.store.get_job_by_id(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job.model_dump(mode="json")
+    data = job.model_dump(mode="json")
+    contact = data["contact"]
+    contact["phone"] = _mask(contact.get("phone"))
+    contact["metadata"] = sorted(contact.get("metadata", {}))  # keys only; values may be personal
+    return data
+
+
+def _mask(phone: str | None) -> str:
+    digits = [c for c in phone or "" if c.isdigit()]
+    return "******" + "".join(digits[-4:]) if len(digits) >= 4 else "******"
 
 
 @router.get("/audit", dependencies=[Depends(require_api_key)])
@@ -249,6 +305,9 @@ async def add_outbound_dnc(request: Request) -> dict[str, Any]:
     except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    norm_phone = normalize_phone(payload.phone)
+    try:
+        norm_phone = to_e164(payload.phone, settings.default_country)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     await queue.store.add_dnc(settings.tenant_id, norm_phone, source=payload.source)
     return {"ok": True, "phone": norm_phone}

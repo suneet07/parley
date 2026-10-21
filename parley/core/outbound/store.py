@@ -215,6 +215,79 @@ class OutboundStore:
                 )
             )
 
+    async def claim_job(self, tenant_id: str, job_id: str, now: datetime) -> CallJob | None:
+        """Atomically move a queued/retry_scheduled job to 'dialing'. Returns the job only for the
+        one caller whose UPDATE changed the row, so concurrent workers can't dial it twice."""
+        async with self._engine.begin() as conn:
+            result = await conn.execute(
+                outbound_jobs_table.update()
+                .where(
+                    outbound_jobs_table.c.tenant_id == tenant_id,
+                    outbound_jobs_table.c.job_id == job_id,
+                    outbound_jobs_table.c.status.in_(("queued", "retry_scheduled")),
+                )
+                .values(status="dialing")
+            )
+            if result.rowcount != 1:
+                return None
+            row = (
+                await conn.execute(
+                    select(outbound_jobs_table.c.job).where(outbound_jobs_table.c.job_id == job_id)
+                )
+            ).first()
+            if row is None:
+                return None
+            job = _hydrate_job(row[0])
+            job.status = "dialing"
+            job.updated_at = _ensure_utc_dt(now) or datetime.now(UTC)
+            await conn.execute(
+                outbound_jobs_table.update()
+                .where(outbound_jobs_table.c.job_id == job_id)
+                .values(job=job.model_dump(mode="json"))
+            )
+        return job
+
+    async def find_recent_job(
+        self,
+        tenant_id: str,
+        *,
+        since: datetime,
+        idempotency_key: str | None = None,
+        phone: str | None = None,
+        goal: str | None = None,
+    ) -> CallJob | None:
+        """Most recent job created since `since` matching an idempotency key, or (phone, goal)."""
+        stmt = select(outbound_jobs_table.c.job).where(outbound_jobs_table.c.tenant_id == tenant_id)
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        since_utc = _ensure_utc_dt(since)
+        norm = normalize_phone(phone) if phone else None
+        best: CallJob | None = None
+        for (payload,) in rows:
+            job = _hydrate_job(payload)
+            if since_utc is not None and job.created_at < since_utc:
+                continue
+            if idempotency_key is not None:
+                hit = job.idempotency_key == idempotency_key
+            else:
+                hit = normalize_phone(job.contact.phone) == norm and job.goal == goal
+            if hit and (best is None or job.created_at > best.created_at):
+                best = job
+        return best
+
+    async def pending_sms_jobs(self, now: datetime, limit: int = 50) -> list[CallJob]:
+        stmt = select(outbound_jobs_table.c.job).where(outbound_jobs_table.c.status == "completed")
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+        now_utc = _ensure_utc_dt(now)
+        jobs = []
+        for (payload,) in rows:
+            job = _hydrate_job(payload)
+            at = _ensure_utc_dt(job.pending_sms_at)
+            if at is not None and not job.sms_sent and now_utc is not None and at <= now_utc:
+                jobs.append(job)
+        return jobs[:limit]
+
     async def due_jobs(self, now: datetime, limit: int = 50) -> list[CallJob]:
         now_naive = _to_utc_naive(now)
         stmt = (

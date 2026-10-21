@@ -44,9 +44,9 @@ class TwilioDialer:
                 url=f"{base_url}/twilio/outbound/{job_id}",
                 status_callback=f"{base_url}/twilio/status/{job_id}",
                 status_callback_event=["completed"],
-                machine_detection="DetectMessageEnd",
-                async_amd=True,
-                async_amd_status_callback=f"{base_url}/twilio/amd/{job_id}",
+                # Synchronous AMD: the answer webhook receives AnsweredBy, so a machine gets
+                # the voicemail drop before the AI pipeline ever starts.
+                machine_detection="Enable",
                 timeout=25,
             )
             return str(call.sid)
@@ -128,10 +128,15 @@ async def sweep_due(ctx: dict[str, Any]) -> int:
     pool = ctx.get("redis")
     for job in due:
         if pool is not None:
-            await pool.enqueue_job("process_job", job.job_id)
+            # Deterministic arq job id: repeated sweeps don't queue the same attempt twice.
+            await pool.enqueue_job(
+                "process_job", job.job_id, _job_id=f"{job.job_id}:{job.attempts}"
+            )
         else:
             queue: OutboundQueue = ctx["queue"]
             await queue.process(job.job_id, now)
+    if ctx.get("queue") is not None:
+        await ctx["queue"].send_due_sms(now)  # deferred fallback texts whose window opened
     return len(due)
 
 
@@ -179,7 +184,7 @@ async def enqueue_now(
             redis_cfg.conn_timeout = 1
             pool = await create_pool(redis_cfg)
             try:
-                await pool.enqueue_job("process_job", job_id)
+                await pool.enqueue_job("process_job", job_id, _job_id=f"{job_id}:new")
                 return
             finally:
                 await pool.close(close_connection_pool=True)

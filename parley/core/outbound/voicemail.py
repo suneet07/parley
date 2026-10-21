@@ -1,26 +1,36 @@
-"""Voicemail TwiML builder for answering-machine detection callbacks."""
+"""Scripted voicemail drop for outbound calls that reach an answering machine."""
 
 from __future__ import annotations
 
 from twilio.twiml.voice_response import VoiceResponse
 
+# The goal is free text from the triggering system (it could name a debt or a medical topic),
+# and a voicemail can be heard by anyone, so only fixed phrases are ever spoken.
+_GOAL_PHRASES = {
+    "appointment": "about your upcoming appointment",
+    "order": "about your recent order",
+    "delivery": "about your delivery",
+    "cart": "about items you left in your cart",
+}
 
-def _spell_digits(phone: str) -> str:
-    digits = [ch for ch in phone if ch.isdigit()]
-    if digits:
-        return ", ".join(digits)
-    return phone
+
+def _goal_phrase(goal: str) -> str:
+    g = goal.lower()
+    for key, phrase in _GOAL_PHRASES.items():
+        if key in g:
+            return phrase
+    return "about your recent request"
 
 
 def voicemail_twiml(business_name: str, goal: str, callback_number: str) -> str:
-    """Return a <= 20-second <Say> + <Hangup/> TwiML with AI disclosure and no personal data."""
-    spelled_number = _spell_digits(callback_number)
-    script = (
-        f"Hi, this is the AI assistant from {business_name}. "
-        f"We called regarding {goal}. "
-        f"Please call us back at {spelled_number}. Thank you, goodbye."
-    )
+    digits = ", ".join(ch for ch in callback_number if ch.isdigit())
     vr = VoiceResponse()
-    vr.say(script)
+    message = (
+        f"Hi, this is the AI assistant from {business_name}, calling {_goal_phrase(goal)}. "
+        "Sorry we missed you."
+    )
+    if digits:
+        message += f" Please call us back at {digits}."
+    vr.say(message + " Thank you, goodbye.")
     vr.hangup()
     return str(vr)

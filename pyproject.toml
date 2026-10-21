@@ -21,6 +21,7 @@ dependencies = [
     "fastembed>=0.9.0",
     "sqlalchemy[asyncio]>=2.0",
     "tzdata>=2026.5",
+    "phonenumbers>=9.0.41",
 ]
 
 [project.optional-dependencies]

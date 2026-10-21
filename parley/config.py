@@ -144,7 +144,14 @@ class Settings(BaseSettings):
     outbound_daily_cap_per_number: int = 200
     outbound_daily_cap_per_contact: int = 2
     outbound_max_attempts: int = 3
+    outbound_max_attempts_per_contact_7d: int = 6
     outbound_sms_fallback: bool = True
+    outbound_signature_max_age_s: int = 300  # signed outbound requests older than this are rejected
+    default_country: str = ""  # ISO alpha-2 (e.g. "IN") for numbers given without a country code
+
+    # Twilio webhooks are rejected unless they carry a valid signature. Only for local
+    # experiments without a Twilio auth token: set TWILIO_INSECURE_DEV=true to skip the check.
+    twilio_insecure_dev: bool = False
 
 
 def get_settings() -> Settings:

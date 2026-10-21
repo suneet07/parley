@@ -7,6 +7,9 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import phonenumbers
+from phonenumbers import timezone as pn_timezone
+
 from parley.core.outbound.models import (
     E164_RE,
     CallJob,
@@ -47,25 +50,30 @@ def _safe_zoneinfo(tz_name: str | None) -> ZoneInfo | None:
         return None
 
 
-def callee_timezone(contact: Contact, business_tz: str) -> ZoneInfo:
-    """Resolve the callee's local timezone from contact.tz, E.164 country prefix, or business_tz."""
+def callee_timezone(contact: Contact, business_tz: str | None = None) -> ZoneInfo | None:
+    """The callee's zone: contact.tz if valid, else the single zone libphonenumber maps the
+    number to. Multi-zone or unknown -> None (the caller must block: never guess from the
+    business's own zone, that's how a Pacific callee gets rung at 5 am)."""
     explicit = _safe_zoneinfo(contact.tz)
     if explicit is not None:
         return explicit
+    try:
+        parsed = phonenumbers.parse(normalize_phone(contact.phone), None)
+    except phonenumbers.NumberParseException:
+        return None
+    zones = [z for z in pn_timezone.time_zones_for_number(parsed) if z != "Etc/Unknown"]
+    if len(zones) != 1:
+        return None
+    return _safe_zoneinfo(_LEGACY_ZONES.get(zones[0], zones[0]))
 
-    phone = normalize_phone(contact.phone)
-    if phone.startswith("+91"):
-        return ZoneInfo("Asia/Kolkata")
-    if phone.startswith("+44"):
-        return ZoneInfo("Europe/London")
-    if phone.startswith("+1"):
-        if business_tz.strip().startswith("America/"):
-            biz_zi = _safe_zoneinfo(business_tz)
-            if biz_zi is not None:
-                return biz_zi
-        return ZoneInfo("America/New_York")
 
-    return _safe_zoneinfo(business_tz) or ZoneInfo("UTC")
+# libphonenumber still returns a few pre-rename IANA ids
+_LEGACY_ZONES = {
+    "Asia/Calcutta": "Asia/Kolkata",
+    "Asia/Katmandu": "Asia/Kathmandu",
+    "Asia/Saigon": "Asia/Ho_Chi_Minh",
+    "Asia/Rangoon": "Asia/Yangon",
+}
 
 
 def _ensure_utc(dt: datetime) -> datetime:
@@ -132,74 +140,60 @@ class ComplianceEngine:
 
         # 4. Calling hours check in callee timezone
         tz = callee_timezone(contact, self.business_tz)
-        local_now = now_utc.astimezone(tz)
-        local_time = local_now.timetz().replace(tzinfo=None)
-        in_weekday = local_now.weekday() in self.rules.allowed_weekdays
-        # Window end is strictly exclusive (e.g. 21:00:00 is outside).
-        in_time_window = self.rules.window_start <= local_time < self.rules.window_end
-
-        if not (in_weekday and in_time_window):
-            reasons.append("outside_calling_hours")
-            if in_weekday and local_time < self.rules.window_start:
+        if tz is None:
+            reasons.append("unknown_timezone")
+            non_retryable = True
+        else:
+            local_now = now_utc.astimezone(tz)
+            local_time = local_now.timetz().replace(tzinfo=None)
+            in_weekday = local_now.weekday() in self.rules.allowed_weekdays
+            # Window end is strictly exclusive (e.g. 21:00:00 is outside).
+            in_time_window = self.rules.window_start <= local_time < self.rules.window_end
+            if not (in_weekday and in_time_window):
+                reasons.append("outside_calling_hours")
+                offset = 0 if in_weekday and local_time < self.rules.window_start else 1
                 next_win = _next_window_start_utc(
-                    local_now.date(),
-                    self.rules,
-                    tz,
-                    start_offset_days=0,
+                    local_now.date(), self.rules, tz, start_offset_days=offset
                 )
-            else:
-                next_win = _next_window_start_utc(
-                    local_now.date(),
-                    self.rules,
-                    tz,
-                    start_offset_days=1,
-                )
-            if next_win is not None:
-                retry_candidates.append(next_win)
-            else:
-                non_retryable = True
+                if next_win is not None:
+                    retry_candidates.append(next_win)
+                else:
+                    non_retryable = True
 
-        # 5. Daily cap per contact (since local midnight in callee tz)
-        local_midnight_utc = datetime.combine(local_now.date(), time(0, 0), tzinfo=tz).astimezone(
-            UTC
-        )
-        contact_dials = await self.store.count_dials(
-            job.tenant_id,
-            phone=norm_phone,
-            since=local_midnight_utc,
-        )
-        if contact_dials >= self.settings.outbound_daily_cap_per_contact:
-            reasons.append("contact_daily_cap")
-            next_day_win = _next_window_start_utc(
-                local_now.date(),
-                self.rules,
-                tz,
-                start_offset_days=1,
+            # 5. Daily cap per contact (since local midnight in callee tz)
+            local_midnight_utc = datetime.combine(
+                local_now.date(), time(0, 0), tzinfo=tz
+            ).astimezone(UTC)
+            contact_dials = await self.store.count_dials(
+                job.tenant_id, phone=norm_phone, since=local_midnight_utc
             )
-            if next_day_win is not None:
-                retry_candidates.append(next_day_win)
-            else:
-                non_retryable = True
+            if contact_dials >= self.settings.outbound_daily_cap_per_contact:
+                reasons.append("contact_daily_cap")
+                next_day_win = _next_window_start_utc(
+                    local_now.date(), self.rules, tz, start_offset_days=1
+                )
+                if next_day_win is not None:
+                    retry_candidates.append(next_day_win)
+                else:
+                    non_retryable = True
 
-        # 6. Daily cap per Twilio number
-        from_number = self.settings.twilio_phone_number
+        # 6. Daily cap per Twilio number: one UTC day for every callee, so the total holds.
+        utc_midnight = datetime.combine(now_utc.date(), time(0, 0), tzinfo=UTC)
         number_dials = await self.store.count_dials(
-            job.tenant_id,
-            from_number=from_number,
-            since=local_midnight_utc,
+            job.tenant_id, from_number=self.settings.twilio_phone_number, since=utc_midnight
         )
         if number_dials >= self.settings.outbound_daily_cap_per_number:
             reasons.append("number_daily_cap")
-            next_day_win = _next_window_start_utc(
-                local_now.date(),
-                self.rules,
-                tz,
-                start_offset_days=1,
-            )
-            if next_day_win is not None:
-                retry_candidates.append(next_day_win)
-            else:
-                non_retryable = True
+            retry_candidates.append(utc_midnight + timedelta(days=1))
+
+        # 6b. Attempts to this contact across ALL jobs in the last 7 days (stops replayed or
+        # duplicated triggers from resetting the per-job attempt counter).
+        week_dials = await self.store.count_dials(
+            job.tenant_id, phone=norm_phone, since=now_utc - timedelta(days=7)
+        )
+        if week_dials >= self.settings.outbound_max_attempts_per_contact_7d:
+            reasons.append("contact_attempt_cap")
+            retry_candidates.append(now_utc + timedelta(days=1))
 
         # 7. Max attempts check
         max_attempts = min(

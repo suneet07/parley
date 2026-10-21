@@ -36,6 +36,7 @@ def test_kill_switch_blocks_phone_and_webrtc(tmp_path: Path) -> None:
     app, _ = _app(tmp_path)
     with TestClient(app) as client:
         app.state.settings.twilio_auth_token = ""
+        app.state.settings.twilio_insecure_dev = True
         app.state.settings.kill_switch = True
         twiml = _voice(client)
         assert "not available" in twiml and "<Hangup" in twiml and "<Stream" not in twiml
@@ -47,6 +48,7 @@ def test_blocklisted_caller_is_hung_up(tmp_path: Path) -> None:
     app, _ = _app(tmp_path)
     with TestClient(app) as client:
         app.state.settings.twilio_auth_token = ""
+        app.state.settings.twilio_insecure_dev = True
         app.state.settings.caller_blocklist = "+919811111111, +14155550100"
         assert "<Stream" not in _voice(client, "+919811111111")
         assert "<Stream" in _voice(client, "+919822222222")
@@ -56,6 +58,7 @@ def test_per_caller_daily_cap(tmp_path: Path) -> None:
     app, store = _app(tmp_path)
     with TestClient(app) as client:
         app.state.settings.twilio_auth_token = ""
+        app.state.settings.twilio_insecure_dev = True
         app.state.settings.max_calls_per_caller_per_day = 2
         caller = "+919833333333"
         for i in range(2):

@@ -36,6 +36,7 @@ def test_api_health_twilio_webhooks_and_whisper(tmp_path: Path) -> None:
 
         # 2. POST /twilio/voice with auth token unset returns XML with wss:// and /twilio/ws
         app.state.settings.twilio_auth_token = ""
+        app.state.settings.twilio_insecure_dev = True
         app.state.settings.public_base_url = "https://demo.example.com"
         voice_resp = client.post(
             "/twilio/voice",
@@ -48,6 +49,7 @@ def test_api_health_twilio_webhooks_and_whisper(tmp_path: Path) -> None:
         # 3. With a token set and a wrong signature -> 403
         token = "super_secret_twilio_token"
         app.state.settings.twilio_auth_token = token
+        app.state.settings.twilio_insecure_dev = False
         form_data = {"From": "+919876543210", "CallSid": "CA12345"}
         bad_resp = client.post(
             "/twilio/voice",
@@ -70,6 +72,7 @@ def test_api_health_twilio_webhooks_and_whisper(tmp_path: Path) -> None:
 
         # 5. Whisper endpoint returns the stored summary
         app.state.settings.twilio_auth_token = ""
+        app.state.settings.twilio_insecure_dev = True
         WHISPERS["CA999"] = "Caller wants a refund for order KC-10482."
         whisper_resp = client.post("/twilio/whisper/CA999")
         assert whisper_resp.status_code == 200
@@ -150,6 +153,7 @@ def test_twilio_ws_token_auth_and_one_time_use(
 
     with TestClient(app) as client:
         app.state.settings.twilio_auth_token = ""
+        app.state.settings.twilio_insecure_dev = True
         app.state.settings.public_base_url = "https://demo.example.com"
 
         # 1. WS without token is rejected with 1008

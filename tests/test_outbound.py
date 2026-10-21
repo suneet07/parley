@@ -110,9 +110,11 @@ def _make_job(
     )
 
 
-def _sign(body: bytes, secret: str) -> str:
-    digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    return f"sha256={digest}"
+def _sign(body: bytes, secret: str, ts: int | None = None) -> dict[str, str]:
+    """Headers for a signed outbound request: HMAC over "<timestamp>.<body>"."""
+    ts = int(datetime.now(UTC).timestamp()) if ts is None else ts
+    digest = hmac.new(secret.encode("utf-8"), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+    return {"X-Parley-Timestamp": str(ts), "X-Parley-Signature": f"sha256={digest}"}
 
 
 # 1. Calling hours, timezones, and DST transitions
@@ -274,7 +276,11 @@ async def test_compliance_daily_caps(tmp_path: Path) -> None:
     dec_num = await engine.check(job_other, now)
     assert dec_num.allowed is False
     assert "number_daily_cap" in dec_num.reasons
-    assert dec_num.retry_at == expected_next_win
+    # The per-number cap is a UTC-day budget, so it retries at the next UTC midnight
+    # (the hours check then defers to the callee's window if needed).
+    assert dec_num.retry_at == datetime(now.year, now.month, now.day, tzinfo=UTC) + timedelta(
+        days=1
+    )
 
     await store.close()
 
@@ -376,7 +382,8 @@ async def test_queue_retries_sms_fallback_and_dnc(tmp_path: Path) -> None:
     sms_phone, sms_body = dialer.sms_sent[0]
     assert sms_phone == "+919876543210"
     assert "Hi Priya, this is Kettle & Co" in sms_body
-    assert "confirm delivery" in sms_body
+    # The goal is free text and could be sensitive, so the SMS never repeats it.
+    assert "confirm delivery" not in sms_body
     assert "Reply STOP to opt out." in sms_body
 
     # do_not_call outcome -> adds DNC, later job for same phone is blocked
@@ -501,6 +508,7 @@ async def test_api_outbound_trigger_and_twiml_routes(
             content=raw_body,
             headers={
                 "Content-Type": "application/json",
+                "X-Parley-Timestamp": str(int(datetime.now(UTC).timestamp())),
                 "X-Parley-Signature": "sha256=0000bad0000",
             },
         )
@@ -520,7 +528,7 @@ async def test_api_outbound_trigger_and_twiml_routes(
             content=raw_body,
             headers={
                 "Content-Type": "application/json",
-                "X-Parley-Signature": _sign(raw_body, secret),
+                **_sign(raw_body, secret),
             },
         )
         assert r_202.status_code == 202
@@ -533,7 +541,9 @@ async def test_api_outbound_trigger_and_twiml_routes(
         job_json = job_resp.json()
         assert job_json["job_id"] == job_id
         assert job_json["goal"] == "recover abandoned cart"
-        assert job_json["contact"]["metadata"]["cart_id"] == "CART-99"
+        # Job view masks the phone and exposes only metadata keys.
+        assert job_json["contact"]["metadata"] == ["cart_id"]
+        assert job_json["contact"]["phone"].startswith("******")
         assert job_json["status"] == "in_progress"
 
         # 4. Trigger without consent -> accepted (202) but job ends blocked with no_consent
@@ -551,7 +561,7 @@ async def test_api_outbound_trigger_and_twiml_routes(
             content=nc_bytes,
             headers={
                 "Content-Type": "application/json",
-                "X-Parley-Signature": _sign(nc_bytes, secret),
+                **_sign(nc_bytes, secret),
             },
         )
         assert r_nc.status_code == 202
@@ -561,13 +571,15 @@ async def test_api_outbound_trigger_and_twiml_routes(
 
         # 5. Outbound TwiML route mints stream token and /twilio/ws passes outbound context
         app.state.settings.twilio_auth_token = ""
+        app.state.settings.twilio_insecure_dev = True
         twiml_resp = client.post(
             f"/twilio/outbound/{job_id}",
-            data={"CallSid": "CA_OUT_1", "To": "+919876543210"},
+            data={"CallSid": "CA_FAKE_0001", "To": "+919876543210"},
         )
         assert twiml_resp.status_code == 200
-        assert '<Parameter name="direction" value="outbound"' in twiml_resp.text
-        assert f'<Parameter name="job_id" value="{job_id}"' in twiml_resp.text
+        # Job context stays server-side; the stream only carries the one-time token.
+        assert 'name="direction"' not in twiml_resp.text
+        assert 'name="job_id"' not in twiml_resp.text
         token_match = re.search(r'<Parameter name="token" value="([^"]+)"', twiml_resp.text)
         assert token_match is not None
         stream_token = token_match.group(1)
@@ -577,7 +589,7 @@ async def test_api_outbound_trigger_and_twiml_routes(
         async def _fake_run_call(transport: Any, **kwargs: Any) -> CallState:
             captured_ws_calls.append(kwargs)
             return CallState(
-                call_id=str(kwargs.get("call_id", "CA_OUT_1")),
+                call_id=str(kwargs.get("call_id", "CA_FAKE_0001")),
                 direction="outbound",
                 disposition="callback_booked",
             )
@@ -592,7 +604,7 @@ async def test_api_outbound_trigger_and_twiml_routes(
                         "event": "start",
                         "start": {
                             "streamSid": "MZ_OUT_1",
-                            "callSid": "CA_OUT_1",
+                            "callSid": "CA_FAKE_0001",
                             "customParameters": {"token": stream_token},
                         },
                     }
@@ -644,10 +656,10 @@ async def test_api_csv_campaign_upload_and_pacing(tmp_path: Path) -> None:
     app.state.settings = settings
 
     csv_content = (
-        b"phone,name,tz,consent,consent_source,order_id\n"
-        b"+919876543210,Alice,Asia/Kolkata,true,csv_import,KC-101\n"
-        b"98765-INVALID,Bob,Asia/Kolkata,true,csv_import,KC-102\n"
-        b"+919876543212,Charlie,Asia/Kolkata,true,csv_import,KC-103\n"
+        b"phone,name,tz,consent,consent_source,consent_at,order_id\n"
+        b"+919876543210,Alice,Asia/Kolkata,true,csv_import,2026-01-05T10:00:00+00:00,KC-101\n"
+        b"98765-INVALID,Bob,Asia/Kolkata,true,csv_import,2026-01-05T10:00:00+00:00,KC-102\n"
+        b"+919876543212,Charlie,Asia/Kolkata,true,csv_import,2026-01-05T10:00:00+00:00,KC-103\n"
     )
 
     with TestClient(app) as client:
@@ -656,7 +668,7 @@ async def test_api_csv_campaign_upload_and_pacing(tmp_path: Path) -> None:
             content=csv_content,
             headers={
                 "Content-Type": "text/csv",
-                "X-Parley-Signature": _sign(csv_content, "csv-secret"),
+                **_sign(csv_content, "csv-secret"),
             },
         )
         assert resp.status_code == 200
@@ -725,7 +737,8 @@ def test_voicemail_twiml_content() -> None:
     )
     assert "AI assistant" in twiml
     assert "Kettle &amp; Co" in twiml or "Kettle & Co" in twiml
-    assert "confirm your order" in twiml
+    assert "about your recent order" in twiml
+    assert "confirm your order" not in twiml  # free-text goal is never spoken
     assert "9, 8, 1, 1, 1, 2, 2, 2, 2, 1" in twiml
     assert "<Hangup" in twiml
     assert "<Stream" not in twiml
