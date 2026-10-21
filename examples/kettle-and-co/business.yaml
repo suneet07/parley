@@ -1,0 +1,11 @@
+business: Kettle & Co
+persona: "Friendly, concise phone support agent for Kettle & Co, an Indian kitchenware store. Speaks in short sentences suitable for a phone call."
+greeting: "Thanks for calling Kettle and Co. How can I help you today?"
+voice: {provider: elevenlabs, voice_id: "21m00Tcm4TlvDq8ikWAM", speaking_rate: 1.05}
+hours: {tz: Asia/Kolkata, open: "09:00", close: "21:00"}
+knowledge: [./docs/faq.md, ./docs/returns-policy.md, ./docs/shipping.md, ./docs/products.md, ./docs/warranty.md]
+tools_module: tools.py
+tools: [verify_identity, lookup_order, track_shipment, start_return, issue_refund, offer_store_credit, book_callback, create_ticket]
+policies: {currency: INR, refund_max: 5000, return_window_days: 30}
+escalation: {transfer_to: null, on: [human_requested, anger, policy_exception, repeated_failure]}
+max_call_seconds: 600

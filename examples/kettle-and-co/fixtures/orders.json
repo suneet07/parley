@@ -1,0 +1,542 @@
+[
+  {
+    "order_id": "KC-10482",
+    "customer": {
+      "customer_id": "CUST-001",
+      "name": "Priya Sharma",
+      "phone": "+919811122221",
+      "email": "priya.sharma@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-STL-15",
+        "name": "Classic Steel Kettle 1.5L",
+        "qty": 1,
+        "price": 2499
+      }
+    ],
+    "total": 2499,
+    "status": "delivered",
+    "placed_days_ago": 50,
+    "delivered_days_ago": 45,
+    "carrier": "Delhivery",
+    "tracking": "DL9901482",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10399",
+    "customer": {
+      "customer_id": "CUST-001",
+      "name": "Priya Sharma",
+      "phone": "+919811122221",
+      "email": "priya.sharma@example.com"
+    },
+    "items": [
+      {
+        "sku": "ACC-BMB-TRY",
+        "name": "Bamboo Tea Tray",
+        "qty": 1,
+        "price": 899
+      }
+    ],
+    "total": 899,
+    "status": "delivered",
+    "placed_days_ago": 9,
+    "delivered_days_ago": 5,
+    "carrier": "Delhivery",
+    "tracking": "DL9901399",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10501",
+    "customer": {
+      "customer_id": "CUST-002",
+      "name": "Rahul Verma",
+      "phone": "+919822233332",
+      "email": "rahul.v@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-CPR-10",
+        "name": "Copper Pour-Over Kettle",
+        "qty": 1,
+        "price": 3999
+      }
+    ],
+    "total": 3999,
+    "status": "delivered",
+    "placed_days_ago": 14,
+    "delivered_days_ago": 10,
+    "carrier": "BlueDart",
+    "tracking": "BD7781501",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10533",
+    "customer": {
+      "customer_id": "CUST-003",
+      "name": "Arjun Mehta",
+      "phone": "+919833344443",
+      "email": "arjun.m@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-GLS-12",
+        "name": "Borosilicate Glass Teapot 1.2L",
+        "qty": 1,
+        "price": 1899
+      }
+    ],
+    "total": 1899,
+    "status": "shipped",
+    "placed_days_ago": 3,
+    "delivered_days_ago": null,
+    "carrier": "BlueDart",
+    "tracking": "BD7781234",
+    "eta_days": 2
+  },
+  {
+    "order_id": "KC-10560",
+    "customer": {
+      "customer_id": "CUST-004",
+      "name": "Sneha Iyer",
+      "phone": "+919844455554",
+      "email": "sneha.iyer@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-STL-15",
+        "name": "Classic Steel Kettle 1.5L",
+        "qty": 1,
+        "price": 2499
+      }
+    ],
+    "total": 2499,
+    "status": "processing",
+    "placed_days_ago": 0,
+    "delivered_days_ago": null,
+    "carrier": null,
+    "tracking": null,
+    "eta_days": 4
+  },
+  {
+    "order_id": "KC-10477",
+    "customer": {
+      "customer_id": "CUST-005",
+      "name": "Neha Gupta",
+      "phone": "+919855566665",
+      "email": "neha.g@example.com"
+    },
+    "items": [
+      {
+        "sku": "CI-DOV-60",
+        "name": "Cast Iron Dutch Oven 6L",
+        "qty": 1,
+        "price": 7800
+      }
+    ],
+    "total": 7800,
+    "status": "delivered",
+    "placed_days_ago": 25,
+    "delivered_days_ago": 20,
+    "carrier": "Delhivery",
+    "tracking": "DL9901477",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10410",
+    "customer": {
+      "customer_id": "CUST-006",
+      "name": "Vikram Nair",
+      "phone": "+919866677776",
+      "email": "vikram.nair@example.com"
+    },
+    "items": [
+      {
+        "sku": "CI-SKL-26",
+        "name": "Pre-Seasoned Cast Iron Skillet 26cm",
+        "qty": 1,
+        "price": 2999
+      }
+    ],
+    "total": 2999,
+    "status": "delivered",
+    "placed_days_ago": 18,
+    "delivered_days_ago": 14,
+    "carrier": "Delhivery",
+    "tracking": "DL9901410",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10415",
+    "customer": {
+      "customer_id": "CUST-007",
+      "name": "Ananya Chatterjee",
+      "phone": "+919877788887",
+      "email": "ananya.c@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-ELC-17",
+        "name": "TempControl Gooseneck Electric Kettle",
+        "qty": 1,
+        "price": 4599
+      }
+    ],
+    "total": 4599,
+    "status": "delivered",
+    "placed_days_ago": 12,
+    "delivered_days_ago": 8,
+    "carrier": "BlueDart",
+    "tracking": "BD7781415",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10422",
+    "customer": {
+      "customer_id": "CUST-008",
+      "name": "Rohan Deshmukh",
+      "phone": "+919888899998",
+      "email": "rohan.d@example.com"
+    },
+    "items": [
+      {
+        "sku": "ACC-BMB-TRY",
+        "name": "Bamboo Tea Tray",
+        "qty": 2,
+        "price": 899
+      }
+    ],
+    "total": 1798,
+    "status": "delivered",
+    "placed_days_ago": 35,
+    "delivered_days_ago": 31,
+    "carrier": "Delhivery",
+    "tracking": "DL9901422",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10430",
+    "customer": {
+      "customer_id": "CUST-009",
+      "name": "Kavita Rao",
+      "phone": "+919899900009",
+      "email": "kavita.rao@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-STL-15",
+        "name": "Classic Steel Kettle 1.5L",
+        "qty": 1,
+        "price": 2499
+      },
+      {
+        "sku": "ACC-INF-SS",
+        "name": "Fine Mesh Brass-Rim Tea Infuser",
+        "qty": 1,
+        "price": 499
+      }
+    ],
+    "total": 2998,
+    "status": "delivered",
+    "placed_days_ago": 7,
+    "delivered_days_ago": 3,
+    "carrier": "BlueDart",
+    "tracking": "BD7781430",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10441",
+    "customer": {
+      "customer_id": "CUST-010",
+      "name": "Siddharth Malhotra",
+      "phone": "+919810011001",
+      "email": "siddharth.m@example.com"
+    },
+    "items": [
+      {
+        "sku": "CI-DOV-60",
+        "name": "Cast Iron Dutch Oven 6L",
+        "qty": 1,
+        "price": 7800
+      }
+    ],
+    "total": 7800,
+    "status": "delivered",
+    "placed_days_ago": 65,
+    "delivered_days_ago": 60,
+    "carrier": "Delhivery",
+    "tracking": "DL9901441",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10455",
+    "customer": {
+      "customer_id": "CUST-011",
+      "name": "Meera Krishnan",
+      "phone": "+919810022002",
+      "email": "meera.k@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-CPR-10",
+        "name": "Copper Pour-Over Kettle",
+        "qty": 1,
+        "price": 3999
+      }
+    ],
+    "total": 3999,
+    "status": "shipped",
+    "placed_days_ago": 2,
+    "delivered_days_ago": null,
+    "carrier": "Delhivery",
+    "tracking": "DL9901455",
+    "eta_days": 3
+  },
+  {
+    "order_id": "KC-10462",
+    "customer": {
+      "customer_id": "CUST-012",
+      "name": "Aditya Joshi",
+      "phone": "+919810033003",
+      "email": "aditya.joshi@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-GLS-12",
+        "name": "Borosilicate Glass Teapot 1.2L",
+        "qty": 1,
+        "price": 1899
+      }
+    ],
+    "total": 1899,
+    "status": "cancelled",
+    "placed_days_ago": 15,
+    "delivered_days_ago": null,
+    "carrier": null,
+    "tracking": null,
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10490",
+    "customer": {
+      "customer_id": "CUST-013",
+      "name": "Pooja Kulkarni",
+      "phone": "+919810044004",
+      "email": "pooja.k@example.com"
+    },
+    "items": [
+      {
+        "sku": "CI-SKL-26",
+        "name": "Pre-Seasoned Cast Iron Skillet 26cm",
+        "qty": 1,
+        "price": 2999
+      }
+    ],
+    "total": 2999,
+    "status": "delivered",
+    "placed_days_ago": 28,
+    "delivered_days_ago": 24,
+    "carrier": "BlueDart",
+    "tracking": "BD7781490",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10510",
+    "customer": {
+      "customer_id": "CUST-014",
+      "name": "Karan Kapoor",
+      "phone": "+919810055005",
+      "email": "karan.kapoor@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-ELC-17",
+        "name": "TempControl Gooseneck Electric Kettle",
+        "qty": 1,
+        "price": 4599
+      }
+    ],
+    "total": 4599,
+    "status": "shipped",
+    "placed_days_ago": 4,
+    "delivered_days_ago": null,
+    "carrier": "BlueDart",
+    "tracking": "BD7781510",
+    "eta_days": 1
+  },
+  {
+    "order_id": "KC-10518",
+    "customer": {
+      "customer_id": "CUST-015",
+      "name": "Divya Menon",
+      "phone": "+919810066006",
+      "email": "divya.menon@example.com"
+    },
+    "items": [
+      {
+        "sku": "ACC-BMB-TRY",
+        "name": "Bamboo Tea Tray",
+        "qty": 1,
+        "price": 899
+      },
+      {
+        "sku": "ACC-INF-SS",
+        "name": "Fine Mesh Brass-Rim Tea Infuser",
+        "qty": 2,
+        "price": 499
+      }
+    ],
+    "total": 1897,
+    "status": "delivered",
+    "placed_days_ago": 6,
+    "delivered_days_ago": 2,
+    "carrier": "Delhivery",
+    "tracking": "DL9901518",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10524",
+    "customer": {
+      "customer_id": "CUST-016",
+      "name": "Nikhil Bansal",
+      "phone": "+919810077007",
+      "email": "nikhil.b@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-STL-15",
+        "name": "Classic Steel Kettle 1.5L",
+        "qty": 2,
+        "price": 2499
+      }
+    ],
+    "total": 4998,
+    "status": "delivered",
+    "placed_days_ago": 19,
+    "delivered_days_ago": 15,
+    "carrier": "Delhivery",
+    "tracking": "DL9901524",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10540",
+    "customer": {
+      "customer_id": "CUST-017",
+      "name": "Ritu Agarwal",
+      "phone": "+919810088008",
+      "email": "ritu.agarwal@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-CPR-10",
+        "name": "Copper Pour-Over Kettle",
+        "qty": 1,
+        "price": 3999
+      }
+    ],
+    "total": 3999,
+    "status": "processing",
+    "placed_days_ago": 1,
+    "delivered_days_ago": null,
+    "carrier": null,
+    "tracking": null,
+    "eta_days": 5
+  },
+  {
+    "order_id": "KC-10548",
+    "customer": {
+      "customer_id": "CUST-018",
+      "name": "Suresh Pillai",
+      "phone": "+919810099009",
+      "email": "suresh.pillai@example.com"
+    },
+    "items": [
+      {
+        "sku": "CI-SKL-26",
+        "name": "Pre-Seasoned Cast Iron Skillet 26cm",
+        "qty": 1,
+        "price": 2999
+      }
+    ],
+    "total": 2999,
+    "status": "delivered",
+    "placed_days_ago": 100,
+    "delivered_days_ago": 95,
+    "carrier": "BlueDart",
+    "tracking": "BD7781548",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10552",
+    "customer": {
+      "customer_id": "CUST-019",
+      "name": "Swati Sengupta",
+      "phone": "+919810101010",
+      "email": "swati.s@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-GLS-12",
+        "name": "Borosilicate Glass Teapot 1.2L",
+        "qty": 1,
+        "price": 1899
+      }
+    ],
+    "total": 1899,
+    "status": "delivered",
+    "placed_days_ago": 11,
+    "delivered_days_ago": 7,
+    "carrier": "Delhivery",
+    "tracking": "DL9901552",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10555",
+    "customer": {
+      "customer_id": "CUST-020",
+      "name": "Deepak Tiwari",
+      "phone": "+919810111213",
+      "email": "deepak.tiwari@example.com"
+    },
+    "items": [
+      {
+        "sku": "KTL-ELC-17",
+        "name": "TempControl Gooseneck Electric Kettle",
+        "qty": 1,
+        "price": 4599
+      }
+    ],
+    "total": 4599,
+    "status": "delivered",
+    "placed_days_ago": 22,
+    "delivered_days_ago": 18,
+    "carrier": "BlueDart",
+    "tracking": "BD7781555",
+    "eta_days": null
+  },
+  {
+    "order_id": "KC-10559",
+    "customer": {
+      "customer_id": "CUST-021",
+      "name": "Tanya Bhatia",
+      "phone": "+919810141516",
+      "email": "tanya.bhatia@example.com"
+    },
+    "items": [
+      {
+        "sku": "ACC-INF-SS",
+        "name": "Fine Mesh Brass-Rim Tea Infuser",
+        "qty": 1,
+        "price": 499
+      }
+    ],
+    "total": 499,
+    "status": "cancelled",
+    "placed_days_ago": 5,
+    "delivered_days_ago": null,
+    "carrier": null,
+    "tracking": null,
+    "eta_days": null
+  }
+]
