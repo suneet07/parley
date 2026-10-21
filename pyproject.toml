@@ -53,7 +53,8 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ASYNC", "RUF"]
-ignore = ["RUF012"]
+# ASYNC240: small startup-time file reads in async code are fine; hot paths use aiosqlite/httpx.
+ignore = ["RUF012", "ASYNC240"]
 
 [tool.mypy]
 python_version = "3.12"
