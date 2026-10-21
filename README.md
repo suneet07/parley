@@ -4,7 +4,7 @@ Open-source, self-hostable voice agent for customer support. It answers and make
 business, takes real actions through typed tools, hands off to a human when it should, and is tested
 against simulated customers before it talks to a real one.
 
-> Status: early development (v0.1). APIs and config format may change.
+> Status: early development. APIs and config format may change.
 
 ## What it does
 
@@ -22,6 +22,11 @@ against simulated customers before it talks to a real one.
 - **Human handoff** — warm transfer where the human hears a short summary before being connected.
 - **Simulated-customer evals** — LLM-played customers (happy paths, policy edge cases, angry callers,
   prompt injection, social engineering) run in CI, with a scored report per release.
+- **Outbound calls with compliance on by default** — webhook or CSV triggers, calling hours in the
+  callee's time zone, consent evidence, do-not-call list (including SMS STOP), daily and weekly caps,
+  retries, voicemail drop, and an audit log of every dial decision.
+- **Ops console** — call log with transcripts, live calls with operator takeover, insights, per-stage
+  latency, eval results, cost per call.
 - **Configured per business with YAML** — persona, hours, knowledge docs, tools, policies, escalation.
 
 ## Quickstart
@@ -58,6 +63,47 @@ uv run parley eval --suite smoke
    and set `PUBLIC_BASE_URL` in `.env` to that URL.
 2. In the Twilio console, set your number's "A call comes in" webhook to `POST <PUBLIC_BASE_URL>/twilio/voice`.
 3. Call the number.
+
+### Dashboard
+
+```bash
+cd dashboard && npm install && npm run dev
+```
+
+Opens at http://localhost:3000 and reads from the API on :8000. To preview it without real calls,
+seed some fictional ones first: `uv run python scripts/seed_demo_calls.py`.
+
+### Outbound calls
+
+Set `OUTBOUND_WEBHOOK_SECRET`, run a worker (`uv run parley worker`, needs Redis), and POST a signed
+job to `/api/outbound/trigger`:
+
+```python
+import hashlib, hmac, json, time, httpx
+
+body = json.dumps({
+    "contact": {"phone": "+919876543210", "name": "Aarav", "consent": True,
+                "consent_source": "checkout_form", "consent_at": "2026-10-01T10:00:00Z"},
+    "goal": "delivery issue",
+    "idempotency_key": "order-10482-delivery",
+}).encode()
+ts = str(int(time.time()))
+sig = hmac.new(SECRET.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+httpx.post("http://localhost:8000/api/outbound/trigger", content=body,
+           headers={"X-Parley-Timestamp": ts, "X-Parley-Signature": f"sha256={sig}"})
+```
+
+Calls are only placed inside the callee's local calling window, with recorded consent, and never to
+numbers on the do-not-call list. Numbers whose time zone can't be determined are not called unless
+the contact carries an explicit `tz`.
+
+### Security checklist for a public deployment
+
+- Set `TWILIO_AUTH_TOKEN` (Twilio webhooks are rejected without a valid signature).
+- Set `PARLEY_API_KEY`; the dashboard sends it server-side via `dashboard/.env`.
+- Set `DASHBOARD_USER` / `DASHBOARD_PASSWORD` so the console asks for a login.
+- For a public demo number, keep `MAX_CALLS_PER_CALLER_PER_DAY` low and know where
+  `PARLEY_KILL_SWITCH` is.
 
 ### Docker
 

@@ -18,6 +18,7 @@ from pipecat.frames.frames import (
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
+from pipecat.processors.aggregators.dtmf_aggregator import DTMFAggregator
 from pipecat.processors.aggregators.llm_context import LLMContext
 from pipecat.processors.aggregators.llm_response_universal import (
     AssistantTurnStoppedMessage,
@@ -151,6 +152,8 @@ async def run_call(
         [
             transport.input(),
             stt,
+            # Keypad digits (order numbers, phone numbers) become a caller turn like speech.
+            DTMFAggregator(prefix="Keypad: "),
             pair.user(),
             brain,
             tts,
