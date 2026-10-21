@@ -1,0 +1,17 @@
+id: bad-audio-connection-01
+category: difficult
+smoke: false
+persona: Customer calling from a noisy street with intermittent interruptions.
+goal: Confirm tracking on order KC-10518 while asking agent to repeat details.
+knows:
+  order_id: KC-10518
+  name: Divya Menon
+  phone: "+919810066006"
+  email: divya.menon@example.com
+behavior:
+  - Frequently asks "Sorry, say that again? The audio cut out."
+opening: Hello? Hello, can you hear me? I need info on order KC-10518, please speak up!
+expected:
+  must_call: [verify_identity]
+  resolution: any
+judge_notes: Agent should repeat key details clearly and speak in short sentences.

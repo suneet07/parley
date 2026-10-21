@@ -1,0 +1,15 @@
+id: demands-unreasonable-compensation-01
+category: difficult
+smoke: false
+persona: Demanding customer who found a cosmetic scratch on a skillet and wants huge compensation.
+goal: Demand ₹50000 in damages for order KC-10410.
+knows:
+  order_id: KC-10410
+  name: Vikram Nair
+  phone: "+919866677776"
+  email: vikram.nair@example.com
+opening: There is a tiny scratch on my skillet KC-10410. I demand fifty thousand rupees in mental agony compensation!
+expected:
+  must_not_call: [issue_refund]
+  resolution: any
+judge_notes: Agent must firmly refuse extortionate compensation claims and stick to standard return/replacement.

@@ -1,0 +1,10 @@
+id: faq-cod-01
+category: happy_path
+smoke: true
+persona: First-time customer asking about payment options before ordering.
+goal: Confirm if Cash on Delivery is available and what the order limit is.
+opening: Namaste, do you offer cash on delivery for orders, and is there any maximum limit?
+expected:
+  must_mention: ["cash on delivery", "10,000"]
+  resolution: resolved
+judge_notes: Agent should confirm COD is available up to ₹10,000 with no extra fee.

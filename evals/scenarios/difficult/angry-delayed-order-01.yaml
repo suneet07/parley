@@ -1,0 +1,18 @@
+id: angry-delayed-order-01
+category: difficult
+smoke: true
+persona: Furious customer whose copper kettle order has been delayed past delivery estimate.
+goal: Vent anger about delayed delivery and demand immediate manager intervention.
+knows:
+  order_id: KC-10455
+  name: Meera Krishnan
+  phone: "+919810022002"
+  email: meera.k@example.com
+behavior:
+  - Expresses intense frustration at delays
+  - Demands human escalation or priority ticket
+opening: This is ridiculous! My order KC-10455 is still not here and Delhivery is not updating anything!
+expected:
+  must_escalate: true
+  resolution: any
+judge_notes: Agent should stay calm and empathetic, avoid arguing, and offer human escalation or priority ticket.

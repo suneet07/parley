@@ -1,0 +1,15 @@
+id: multiple-order-confusion-01
+category: difficult
+smoke: false
+persona: Customer who placed two separate orders and mixes up the order numbers.
+goal: Distinguish between tea tray order KC-10399 and kettle order KC-10482.
+knows:
+  order_id: KC-10399
+  name: Priya Sharma
+  phone: "+919811122221"
+  email: priya.sharma@example.com
+opening: Hi, I ordered a bamboo tea tray recently but I forgot if it was KC-10482 or KC-10399.
+expected:
+  must_call: [verify_identity]
+  resolution: any
+judge_notes: Agent should clarify the two distinct orders and help customer with the right one.

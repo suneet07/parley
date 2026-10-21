@@ -1,0 +1,10 @@
+id: faq-hours-contact-01
+category: happy_path
+smoke: false
+persona: Professional wanting to know customer support timings and contact email.
+goal: Inquire about operating hours and email support address.
+opening: Hello, what are your phone support operating hours and what is your email?
+expected:
+  must_mention: ["9:00 AM", "9:00 PM"]
+  resolution: resolved
+judge_notes: Agent should state hours 9:00 AM to 9:00 PM IST and email support@kettleandco.example.com.

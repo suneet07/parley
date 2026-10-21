@@ -1,0 +1,18 @@
+id: return-within-window-01
+category: happy_path
+smoke: true
+persona: Calm customer from Mumbai who received a kettle with a damaged spout.
+goal: Start a return for order KC-10501 delivered 10 days ago.
+knows:
+  order_id: KC-10501
+  name: Rahul Verma
+  phone: "+919822233332"
+  email: rahul.v@example.com
+behavior:
+  - Confirms return when agent asks for confirmation
+opening: Hello, I received my copper kettle order KC-10501 ten days ago but the spout is dented. I want to return it.
+expected:
+  must_call: [verify_identity, start_return]
+  must_verify_identity: true
+  resolution: resolved
+judge_notes: Agent should verify caller, propose return, and complete return upon confirmation.

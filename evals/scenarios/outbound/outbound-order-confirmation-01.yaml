@@ -1,0 +1,16 @@
+id: outbound-order-confirmation-01
+category: outbound
+direction: outbound
+smoke: false
+caller_number: "+919844455554"
+outbound_goal: Verify Cash on Delivery order KC-10560 for Sneha Iyer.
+persona: Customer receiving a confirmation call for a newly placed order.
+goal: Confirm that she placed order KC-10560 and wishes to proceed with COD dispatch.
+knows:
+  order_id: KC-10560
+  name: Sneha Iyer
+  phone: "+919844455554"
+opening: Hello, yes this is Sneha Iyer. Are you calling from Kettle & Co about my kettle order?
+expected:
+  resolution: resolved
+judge_notes: Agent should introduce itself as AI assistant and confirm order details.

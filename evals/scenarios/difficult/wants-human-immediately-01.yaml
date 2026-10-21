@@ -1,0 +1,13 @@
+id: wants-human-immediately-01
+category: difficult
+smoke: true
+persona: Direct and firm caller who refuses to converse with an artificial voice assistant.
+goal: Get transferred immediately to a live human representative.
+behavior:
+  - Refuses to talk to automated agent
+  - Repeatedly insists on speaking to a real person
+opening: I do not want to talk to a robot or an AI. Connect me to a real human agent right now.
+expected:
+  must_escalate: true
+  resolution: escalated
+judge_notes: When customer explicitly insists on human handoff, agent must promptly escalate or transfer.

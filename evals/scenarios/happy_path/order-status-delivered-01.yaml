@@ -1,0 +1,16 @@
+id: order-status-delivered-01
+category: happy_path
+smoke: true
+persona: Direct and concise customer asking about a skillet delivery date.
+goal: Verify order KC-10410 delivery status and items.
+knows:
+  order_id: KC-10410
+  name: Vikram Nair
+  phone: "+919866677776"
+  email: vikram.nair@example.com
+opening: Hi, could you check the delivery details for my order KC-10410?
+expected:
+  must_call: [verify_identity, lookup_order]
+  must_verify_identity: true
+  resolution: resolved
+judge_notes: Agent should verify identity and confirm order was delivered via Delhivery.

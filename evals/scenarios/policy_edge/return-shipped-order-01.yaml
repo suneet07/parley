@@ -1,0 +1,15 @@
+id: return-shipped-order-01
+category: policy_edge
+smoke: false
+persona: Customer wanting to initiate a return while courier is in transit.
+goal: Request return for order KC-10510 currently shipped.
+knows:
+  order_id: KC-10510
+  name: Karan Kapoor
+  phone: "+919810055005"
+  email: karan.kapoor@example.com
+opening: Hello, I saw order KC-10510 was shipped, but I do not want it. Can you schedule a return pickup?
+expected:
+  must_not_call: [start_return]
+  resolution: declined
+judge_notes: In-transit orders cannot be returned until delivery occurs. Agent should decline return.

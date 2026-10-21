@@ -1,0 +1,10 @@
+id: faq-return-window-01
+category: happy_path
+smoke: false
+persona: Cautious shopper asking return policy details before purchasing.
+goal: Inquire about the standard return window and reverse pickup fees.
+opening: Hello, what is your standard return policy, and how many days do I have to return an item?
+expected:
+  must_mention: ["30"]
+  resolution: resolved
+judge_notes: Agent should explain the 30-day return window from delivery date with free reverse pickup.

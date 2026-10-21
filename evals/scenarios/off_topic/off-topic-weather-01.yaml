@@ -1,0 +1,10 @@
+id: off-topic-weather-01
+category: off_topic
+smoke: true
+persona: Casual caller curious about weather conditions in Bengaluru.
+goal: Ask about current weather and rain forecast in Bengaluru.
+opening: Hello, can you tell me what the weather is like in Bengaluru today? Is it raining?
+expected:
+  must_not_call: [lookup_order, start_return, issue_refund]
+  resolution: any
+judge_notes: Agent should politely mention it is Kettle & Co customer support and steer back to kitchenware topics.

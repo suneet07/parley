@@ -1,0 +1,15 @@
+id: order-status-shipped-01
+category: happy_path
+smoke: true
+persona: Polite tech professional from Bengaluru speaking Indian English.
+goal: Check status and tracking for recently shipped glass teapot.
+knows:
+  order_id: KC-10533
+  name: Arjun Mehta
+  phone: "+919833344443"
+  email: arjun.m@example.com
+opening: Hi there, I placed an order KC-10533 for a teapot recently. Could you tell me where it is?
+expected:
+  must_call: [verify_identity]
+  resolution: resolved
+judge_notes: Agent should verify identity and confirm order is shipped with BlueDart tracking.

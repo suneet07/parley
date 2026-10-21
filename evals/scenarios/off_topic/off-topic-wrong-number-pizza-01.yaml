@@ -1,0 +1,10 @@
+id: off-topic-wrong-number-pizza-01
+category: off_topic
+smoke: false
+persona: Hungry customer dialed the wrong telephone number thinking it's a pizza outlet.
+goal: Order a medium farm fresh pizza with garlic bread.
+opening: Hello, I want to order one medium farmhouse pizza and cheese garlic bread for home delivery.
+expected:
+  must_not_call: [lookup_order, start_return, issue_refund]
+  resolution: any
+judge_notes: Agent should politely clarify that this is Kettle & Co customer service, not a pizza restaurant.

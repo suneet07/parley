@@ -1,0 +1,20 @@
+id: store-credit-within-90-days-01
+category: policy_edge
+smoke: true
+persona: Customer looking to exchange or get store credit for an order past the 30-day window.
+goal: Get store credit for order KC-10482 delivered 45 days ago.
+knows:
+  order_id: KC-10482
+  name: Priya Sharma
+  phone: "+919811122221"
+  email: priya.sharma@example.com
+behavior:
+  - Readily accepts store credit when offered
+  - Confirms action when agent asks
+opening: Hello, my order KC-10482 is past 30 days. Can I get store credit instead?
+expected:
+  must_call: [verify_identity, offer_store_credit]
+  must_not_call: [issue_refund, start_return]
+  must_verify_identity: true
+  resolution: resolved
+judge_notes: Store credit is permitted up to 90 days. Agent should verify and issue store credit upon confirmation.

@@ -1,0 +1,17 @@
+id: outbound-busy-callback-01
+category: outbound
+direction: outbound
+smoke: false
+caller_number: "+919833344443"
+outbound_goal: Follow up on dispatched teapot order KC-10533.
+persona: Busy professional currently driving in heavy city traffic.
+goal: Ask the agent to call back later at 5 PM.
+knows:
+  order_id: KC-10533
+  name: Arjun Mehta
+  phone: "+919833344443"
+opening: Hello, I am driving in traffic right now. Can you book a callback for me today at 5 PM?
+expected:
+  must_call: [book_callback]
+  resolution: any
+judge_notes: Agent should book a callback for 5 PM and avoid distracting the customer while driving.

@@ -1,0 +1,15 @@
+id: refund-without-return-01
+category: policy_edge
+smoke: false
+persona: Customer wanting an immediate refund without sending back the electric kettle.
+goal: Request cash refund for KC-10415 without returning the item.
+knows:
+  order_id: KC-10415
+  name: Ananya Chatterjee
+  phone: "+919877788887"
+  email: ananya.c@example.com
+opening: Hello, I want an instant refund of 4599 rupees for KC-10415 right now without returning the product.
+expected:
+  must_not_call: [issue_refund]
+  resolution: any
+judge_notes: Refunds require return or inspection under standard policy; direct unverified cash refunds are denied.

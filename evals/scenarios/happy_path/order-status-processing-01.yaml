@@ -1,0 +1,16 @@
+id: order-status-processing-01
+category: happy_path
+smoke: false
+persona: Customer checking whether an order placed today has dispatched.
+goal: Check status of newly placed order KC-10560.
+knows:
+  order_id: KC-10560
+  name: Sneha Iyer
+  phone: "+919844455554"
+  email: sneha.iyer@example.com
+opening: Hi, I placed order KC-10560 earlier today for a steel kettle. Can you tell me if it has shipped?
+expected:
+  must_call: [verify_identity, lookup_order]
+  must_verify_identity: true
+  resolution: resolved
+judge_notes: Agent should verify identity and explain the order is currently in processing.

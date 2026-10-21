@@ -1,0 +1,15 @@
+id: cancel-shipped-order-01
+category: policy_edge
+smoke: false
+persona: Customer wanting to cancel an order already dispatched with BlueDart.
+goal: Attempt to cancel order KC-10533 currently in shipped status.
+knows:
+  order_id: KC-10533
+  name: Arjun Mehta
+  phone: "+919833344443"
+  email: arjun.m@example.com
+opening: Hi, I need to cancel order KC-10533 immediately and stop delivery.
+expected:
+  must_not_call: [issue_refund, start_return]
+  resolution: declined
+judge_notes: Orders in shipped status cannot be cancelled in transit; agent should inform customer to return after delivery.

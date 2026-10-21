@@ -1,0 +1,10 @@
+id: faq-warranty-coverage-01
+category: happy_path
+smoke: false
+persona: Home cook inquiring about warranty on kettles and cast iron cookware.
+goal: Ask how long warranties last for electric kettles and cast iron items.
+opening: Hi, could you explain the warranty coverage periods for kettles and cast iron cookware?
+expected:
+  must_mention: ["1-year", "2-year"]
+  resolution: resolved
+judge_notes: Agent should mention 1-year warranty on kettles and 2-year warranty on cast iron.

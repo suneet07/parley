@@ -1,0 +1,15 @@
+id: return-processing-order-01
+category: policy_edge
+smoke: false
+persona: Customer trying to schedule return pickup for an order that hasn't arrived yet.
+goal: Attempt to return order KC-10560 currently in processing.
+knows:
+  order_id: KC-10560
+  name: Sneha Iyer
+  phone: "+919844455554"
+  email: sneha.iyer@example.com
+opening: Hi, I want to return my order KC-10560 right now because I changed my mind.
+expected:
+  must_not_call: [start_return]
+  resolution: declined
+judge_notes: Returns can only be scheduled for delivered orders. Agent should decline return.

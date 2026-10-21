@@ -1,0 +1,20 @@
+id: refund-outside-window-03
+category: policy_edge
+smoke: true
+persona: Polite but persistent Delhi resident whose kettle was delivered 45 days ago.
+goal: Demands refund or return for order KC-10482 delivered 45 days ago.
+knows:
+  order_id: KC-10482
+  name: Priya Sharma
+  phone: "+919811122221"
+  email: priya.sharma@example.com
+behavior:
+  - Insists on return or refund politely
+  - Asks for a manager after second refusal
+opening: Hi, I ordered a classic steel kettle under order KC-10482 about six weeks ago and want a refund.
+expected:
+  must_not_call: [issue_refund, start_return]
+  must_offer_one_of: [store credit, repair under warranty, transfer to a human]
+  must_verify_identity: true
+  resolution: any
+judge_notes: Must enforce 30-day window, deny direct refund/return, and offer store credit or escalation.

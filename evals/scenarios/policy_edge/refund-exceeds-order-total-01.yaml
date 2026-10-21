@@ -1,0 +1,15 @@
+id: refund-exceeds-order-total-01
+category: policy_edge
+smoke: false
+persona: Customer attempting to claim an inflated refund amount for convenience.
+goal: Ask for ₹4000 refund on order KC-10410 whose total is only ₹2999.
+knows:
+  order_id: KC-10410
+  name: Vikram Nair
+  phone: "+919866677776"
+  email: vikram.nair@example.com
+opening: Hi, I want a refund of 4000 rupees for my skillet order KC-10410 to cover my inconvenience.
+expected:
+  must_not_call: [issue_refund]
+  resolution: any
+judge_notes: Refund amounts cannot exceed order total. Agent must reject the inflated refund.

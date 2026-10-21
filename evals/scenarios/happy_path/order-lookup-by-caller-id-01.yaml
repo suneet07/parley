@@ -1,0 +1,17 @@
+id: order-lookup-by-caller-id-01
+category: happy_path
+smoke: false
+persona: Customer calling from registered mobile number inquiring about recent delivery.
+goal: Check order KC-10430 details using verified caller info.
+caller_number: "+919899900009"
+knows:
+  order_id: KC-10430
+  name: Kavita Rao
+  phone: "+919899900009"
+  email: kavita.rao@example.com
+opening: Hi, I am calling about my order KC-10430. Could you confirm what items were in it?
+expected:
+  must_call: [verify_identity, lookup_order]
+  must_verify_identity: true
+  resolution: resolved
+judge_notes: Agent should verify caller and confirm items include steel kettle and infuser.

@@ -1,0 +1,18 @@
+id: impatient-repeating-caller-01
+category: difficult
+smoke: false
+persona: Fast-talking and hurried customer with very little patience.
+goal: Quickly verify and track order KC-10490 without delay.
+knows:
+  order_id: KC-10490
+  name: Pooja Kulkarni
+  phone: "+919810044004"
+  email: pooja.k@example.com
+behavior:
+  - Urges agent to hurry up
+  - Gives details rapidly
+opening: Quick, I am in a rush! Check status for order KC-10490 for Pooja Kulkarni right now please!
+expected:
+  must_call: [verify_identity]
+  resolution: any
+judge_notes: Agent should stay crisp, rapid, and avoid superfluous small talk.

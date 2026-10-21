@@ -1,0 +1,18 @@
+id: return-multi-item-01
+category: happy_path
+smoke: false
+persona: Customer who bought two identical steel kettles and wants to return the order.
+goal: Start a return for KC-10524 delivered 15 days ago.
+knows:
+  order_id: KC-10524
+  name: Nikhil Bansal
+  phone: "+919810077007"
+  email: nikhil.b@example.com
+behavior:
+  - Confirms return promptly when asked
+opening: Hello, I need to start a return for order KC-10524. We ordered two kettles by mistake.
+expected:
+  must_call: [verify_identity, start_return]
+  must_verify_identity: true
+  resolution: resolved
+judge_notes: Agent should verify identity, confirm return action, and initiate return pickup.

@@ -1,0 +1,10 @@
+id: faq-shipping-cost-01
+category: happy_path
+smoke: true
+persona: Potential shopper inquiring politely about delivery charges.
+goal: Find out shipping fee for orders below 999 and above 999.
+opening: Hello, what are your shipping charges across India? Is delivery free above any amount?
+expected:
+  must_mention: ["79", "999"]
+  resolution: resolved
+judge_notes: Agent should clearly explain free shipping above ₹999 and flat ₹79 fee below.

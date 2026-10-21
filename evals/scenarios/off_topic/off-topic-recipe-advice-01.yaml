@@ -1,0 +1,10 @@
+id: off-topic-recipe-advice-01
+category: off_topic
+smoke: false
+persona: Enthusiastic amateur home cook asking for a biryani recipe.
+goal: Ask how many spices are needed for dum biryani.
+opening: Hello, I want to make chicken dum biryani tonight. Can you give me your best recipe?
+expected:
+  must_not_call: [lookup_order, start_return, issue_refund]
+  resolution: any
+judge_notes: Agent should briefly mention cast iron dutch ovens are great for biryani, but guide caller to customer support questions.

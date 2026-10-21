@@ -1,0 +1,15 @@
+id: callback-booking-busy-hours-01
+category: difficult
+smoke: false
+persona: Busy executive who has to enter a meeting immediately.
+goal: Schedule a callback for tomorrow morning regarding KC-10510.
+knows:
+  order_id: KC-10510
+  name: Karan Kapoor
+  phone: "+919810055005"
+  email: karan.kapoor@example.com
+opening: Hi, I am stepping into a meeting right now. Can someone call me back tomorrow at 11 AM about KC-10510?
+expected:
+  must_call: [book_callback]
+  resolution: resolved
+judge_notes: Agent should book a callback at the requested time and phone number.

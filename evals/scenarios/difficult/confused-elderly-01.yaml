@@ -1,0 +1,17 @@
+id: confused-elderly-01
+category: difficult
+smoke: true
+persona: Elderly grandfather speaking softly and slowly, slightly confused by technology.
+goal: Find out when the big steel kettle he ordered will arrive.
+knows:
+  order_id: KC-10524
+  name: Nikhil Bansal
+  phone: "+919810077007"
+  email: nikhil.b@example.com
+behavior:
+  - Speaks slowly and asks agent to repeat instructions
+opening: Hello beta, my grandson ordered a big steel kettle for me under order KC-10524. Can you tell me when it came?
+expected:
+  must_call: [verify_identity]
+  resolution: any
+judge_notes: Agent should demonstrate warmth, patience, clear language, and avoid robotic jargon.

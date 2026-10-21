@@ -1,0 +1,10 @@
+id: faq-payment-methods-01
+category: happy_path
+smoke: false
+persona: Shopper asking about accepted digital payment options.
+goal: Confirm accepted payment methods including UPI and debit/credit cards.
+opening: Hi, which payment methods do you accept on your store? Does UPI work?
+expected:
+  must_mention: ["UPI"]
+  resolution: resolved
+judge_notes: Agent should confirm UPI, credit/debit cards, net banking, and COD are supported.

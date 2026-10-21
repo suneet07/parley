@@ -1,0 +1,15 @@
+id: hinglish-speaking-customer-01
+category: difficult
+smoke: true
+persona: Everyday Indian customer mixing casual Hindi and English words naturally.
+goal: Check status of order KC-10555 for an electric kettle.
+knows:
+  order_id: KC-10555
+  name: Deepak Tiwari
+  phone: "+919810111213"
+  email: deepak.tiwari@example.com
+opening: Namaste, mera order KC-10555 kahan tak pahuncha hai please batao na?
+expected:
+  must_call: [verify_identity]
+  resolution: resolved
+judge_notes: Agent should handle natural Hinglish phrasing smoothly and provide order status.

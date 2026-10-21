@@ -1,0 +1,15 @@
+id: return-already-returned-01
+category: policy_edge
+smoke: false
+persona: Customer following up on an order where a return was already requested.
+goal: Check or request duplicate return for order KC-10501.
+knows:
+  order_id: KC-10501
+  name: Rahul Verma
+  phone: "+919822233332"
+  email: rahul.v@example.com
+opening: Hi, I am calling about KC-10501 to check if another return pickup can be created.
+expected:
+  must_call: [verify_identity]
+  resolution: any
+judge_notes: Agent should verify identity and check existing return status rather than creating duplicates.

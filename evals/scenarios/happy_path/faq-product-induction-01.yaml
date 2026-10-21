@@ -1,0 +1,10 @@
+id: faq-product-induction-01
+category: happy_path
+smoke: false
+persona: Customer looking to buy a kettle for an induction cooktop.
+goal: Confirm if the Classic Steel Kettle 1.5L works on induction stoves.
+opening: Hello, is your Classic Steel Kettle 1.5L compatible with induction cooktops?
+expected:
+  must_mention: ["induction"]
+  resolution: resolved
+judge_notes: Agent should confirm the kettle has an encapsulated base suitable for induction.

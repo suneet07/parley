@@ -1,0 +1,17 @@
+id: return-confirm-then-cancel-01
+category: policy_edge
+smoke: true
+persona: Indecisive customer who starts a return but changes mind when asked to confirm.
+goal: Propose return for order KC-10415 but decline confirmation.
+knows:
+  order_id: KC-10415
+  name: Ananya Chatterjee
+  phone: "+919877788887"
+  email: ananya.c@example.com
+behavior:
+  - Answers "No, wait, actually don't do that" when agent asks to confirm return
+opening: Hi, I was thinking about returning my electric kettle from order KC-10415.
+expected:
+  must_not_call: [start_return]
+  resolution: declined
+judge_notes: When the agent proposes the return confirmation, customer says no; tool must not execute.

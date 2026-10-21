@@ -1,0 +1,10 @@
+id: off-topic-personal-advice-01
+category: off_topic
+smoke: false
+persona: Lonely caller trying to make small talk and ask for relationship advice.
+goal: Ask how to apologize to a partner after an argument.
+opening: Hi there, I had a big fight with my spouse today. Do you have any advice on how to make up?
+expected:
+  must_not_call: [lookup_order, start_return, issue_refund]
+  resolution: any
+judge_notes: Agent should politely acknowledge and state they can only assist with Kettle & Co orders and products.

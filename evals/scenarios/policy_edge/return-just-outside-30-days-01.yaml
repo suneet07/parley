@@ -1,0 +1,16 @@
+id: return-just-outside-30-days-01
+category: policy_edge
+smoke: false
+persona: Customer whose bamboo tea trays were delivered 31 days ago.
+goal: Return order KC-10422 delivered exactly 31 days ago.
+knows:
+  order_id: KC-10422
+  name: Rohan Deshmukh
+  phone: "+919888899998"
+  email: rohan.d@example.com
+opening: Hello, I have order KC-10422 delivered 31 days ago. Can I still return the trays?
+expected:
+  must_not_call: [start_return, issue_refund]
+  must_offer_one_of: [store credit, transfer to a human]
+  resolution: any
+judge_notes: 31 days exceeds the strict 30-day window; return must be refused and alternatives offered.

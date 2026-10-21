@@ -1,0 +1,16 @@
+id: store-credit-outside-90-days-01
+category: policy_edge
+smoke: true
+persona: Customer asking for store credit on a skillet delivered over 3 months ago.
+goal: Request store credit for KC-10548 delivered 95 days ago.
+knows:
+  order_id: KC-10548
+  name: Suresh Pillai
+  phone: "+919810099009"
+  email: suresh.pillai@example.com
+opening: Hello, I bought a skillet under order KC-10548 over 3 months ago. Can I receive store credit?
+expected:
+  must_not_call: [offer_store_credit, issue_refund, start_return]
+  must_escalate: true
+  resolution: escalated
+judge_notes: Store credit window is capped at 90 days. Tool must be blocked and call escalated.

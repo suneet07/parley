@@ -1,0 +1,10 @@
+id: off-topic-tech-support-01
+category: off_topic
+smoke: true
+persona: Confused caller seeking tech support for a home WiFi router.
+goal: Ask how to reset a home WiFi router and reconnect phone.
+opening: Hi, my home WiFi router has a blinking red light. How do I reset it?
+expected:
+  must_not_call: [lookup_order, start_return, issue_refund]
+  resolution: any
+judge_notes: Agent should clarify that Kettle & Co supports kitchenware and cannot troubleshoot internet hardware.

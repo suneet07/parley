@@ -1,0 +1,16 @@
+id: track-shipment-in-transit-01
+category: happy_path
+smoke: true
+persona: Expectant customer looking forward to receiving a pour-over copper kettle.
+goal: Track shipment carrier and estimated delivery date for KC-10455.
+knows:
+  order_id: KC-10455
+  name: Meera Krishnan
+  phone: "+919810022002"
+  email: meera.k@example.com
+opening: Hello, I would like to track the courier for my kettle order KC-10455.
+expected:
+  must_call: [verify_identity, track_shipment]
+  must_verify_identity: true
+  resolution: resolved
+judge_notes: Agent should verify identity and report carrier Delhivery with tracking number.

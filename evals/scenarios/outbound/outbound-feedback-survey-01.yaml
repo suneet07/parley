@@ -1,0 +1,16 @@
+id: outbound-feedback-survey-01
+category: outbound
+direction: outbound
+smoke: false
+caller_number: "+919810066006"
+outbound_goal: Conduct post-delivery customer satisfaction check for order KC-10518.
+persona: Satisfied customer who received a bamboo tea tray and infusers.
+goal: Share positive feedback about prompt delivery and good packaging.
+knows:
+  order_id: KC-10518
+  name: Divya Menon
+  phone: "+919810066006"
+opening: Hello, Divya Menon speaking. How can I help you today?
+expected:
+  resolution: resolved
+judge_notes: Agent should introduce itself as AI assistant and record positive delivery feedback.

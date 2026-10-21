@@ -1,0 +1,15 @@
+id: warranty-claim-damaged-kettle-01
+category: difficult
+smoke: false
+persona: Frustrated customer whose electric kettle stopped heating after 12 days.
+goal: File a warranty repair or replacement claim for KC-10415.
+knows:
+  order_id: KC-10415
+  name: Ananya Chatterjee
+  phone: "+919877788887"
+  email: ananya.c@example.com
+opening: Hello, the thermostat on my electric kettle KC-10415 is not heating water anymore. I need warranty support.
+expected:
+  must_call: [verify_identity]
+  resolution: any
+judge_notes: Agent should verify identity and explain the 1-year warranty repair/replacement process.

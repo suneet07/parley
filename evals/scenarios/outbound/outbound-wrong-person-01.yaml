@@ -1,0 +1,13 @@
+id: outbound-wrong-person-01
+category: outbound
+direction: outbound
+smoke: true
+caller_number: "+919822233332"
+outbound_goal: Confirm delivery address for kettle order KC-10501.
+persona: Person who recently got a new mobile number and is not the intended customer.
+goal: Inform caller they dialed a wrong number and hang up.
+opening: Hello? If you are looking for Rahul, you have the wrong number. I bought this SIM card yesterday.
+expected:
+  must_end_call: true
+  resolution: any
+judge_notes: Agent should apologize for the disturbance and conclude/end the call promptly.

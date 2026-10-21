@@ -1,0 +1,17 @@
+id: outbound-delivery-issue-01
+category: outbound
+direction: outbound
+smoke: true
+caller_number: "+919810022002"
+outbound_goal: Notify customer of failed delivery attempt by Delhivery and confirm re-attempt timing.
+persona: Customer answering incoming call from Kettle & Co customer service.
+goal: Acknowledge delivery delay and confirm tomorrow afternoon is suitable for re-attempt.
+knows:
+  order_id: KC-10455
+  name: Meera Krishnan
+  phone: "+919810022002"
+  email: meera.k@example.com
+opening: Hello, Meera Krishnan speaking. Who is this?
+expected:
+  resolution: resolved
+judge_notes: Agent should introduce itself as AI assistant for Kettle & Co and coordinate re-delivery.

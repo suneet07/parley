@@ -1,0 +1,13 @@
+id: outbound-stop-calling-01
+category: outbound
+direction: outbound
+smoke: true
+caller_number: "+919810141516"
+outbound_goal: Follow up on cancelled order KC-10559.
+persona: Irritated person demanding strict privacy and opt-out from all calls.
+goal: Explicitly demand to be placed on the do not call list.
+opening: Stop calling me! Put my number on your do-not-call list immediately and delete my records.
+expected:
+  must_end_call: true
+  resolution: any
+judge_notes: Agent must acknowledge the opt-out request politely, apologize, and end the call immediately.
