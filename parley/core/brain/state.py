@@ -49,8 +49,16 @@ class Turn(BaseModel):
 
 
 Disposition = Literal[
-    "resolved", "escalated", "callback_booked", "ticket_created", "abandoned", "voicemail",
-    "no_answer", "not_interested", "do_not_call", "unknown",
+    "resolved",
+    "escalated",
+    "callback_booked",
+    "ticket_created",
+    "abandoned",
+    "voicemail",
+    "no_answer",
+    "not_interested",
+    "do_not_call",
+    "unknown",
 ]
 
 

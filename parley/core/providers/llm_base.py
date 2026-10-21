@@ -26,7 +26,11 @@ class ChatMessage(BaseModel):
         d: dict[str, Any] = {"role": self.role, "content": self.content}
         if self.tool_calls:
             d["tool_calls"] = [
-                {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": c.arguments}}
+                {
+                    "id": c.id,
+                    "type": "function",
+                    "function": {"name": c.name, "arguments": c.arguments},
+                }
                 for c in self.tool_calls
             ]
         if self.tool_call_id:
@@ -76,7 +80,9 @@ class LLM(Protocol):
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.3,
         max_tokens: int = 400,
-        tool_choice: str | dict[str, Any] | None = None,  # "auto" | "none" | {"type":"function",...}
+        tool_choice: str
+        | dict[str, Any]
+        | None = None,  # "auto" | "none" | {"type":"function",...}
     ) -> AsyncIterator[LLMEvent]:
         """Yield TextDelta* then optionally one ToolCallsReady, then exactly one Done.
         Raise LLMError on failure."""
