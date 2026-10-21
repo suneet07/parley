@@ -1,0 +1,32 @@
+name: nightly-evals
+
+on:
+  schedule:
+    - cron: "30 21 * * *"  # 03:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  full-suite:
+    runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      PARLEY_EVAL_NO_EXIT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.7"
+      - run: uv sync --frozen
+      - run: uv run parley eval --suite full --concurrency 3
+      - name: Commit report
+        run: |
+          git config user.name "parley-bot"
+          git config user.email "parley-bot@users.noreply.github.com"
+          git add evals/reports/latest-full.md evals/reports/latest-full.json
+          git commit -m "evals: nightly report" || echo "no changes"
+          git push
