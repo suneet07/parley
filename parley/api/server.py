@@ -9,7 +9,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from parley.api import twilio_routes, webrtc_routes
+from parley.api import dashboard_routes, twilio_routes, webrtc_routes
 from parley.api.store import CallStore
 from parley.config import get_settings, load_business
 
@@ -102,6 +102,7 @@ def create_app(
 
     app.include_router(twilio_routes.router)
     app.include_router(webrtc_routes.router)
+    app.include_router(dashboard_routes.router)
     webrtc_routes.mount_webrtc_ui(app)
 
     return app
