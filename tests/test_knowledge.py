@@ -230,9 +230,7 @@ async def test_real_embedder_thresholds() -> None:
     results_direct = await retriever.search("how many days do I have to return an item", k=4)
     assert len(results_direct) > 0
     assert results_direct[0].score >= 0.5
-    top_source_heading = (
-        f"{results_direct[0].source} {results_direct[0].heading or ''}"
-    ).lower()
+    top_source_heading = (f"{results_direct[0].source} {results_direct[0].heading or ''}").lower()
     assert "return" in top_source_heading
 
     # Unrelated queries must score < 0.35

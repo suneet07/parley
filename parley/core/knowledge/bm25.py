@@ -8,13 +8,57 @@ import re
 import numpy as np
 
 # Small English stopword list (~40 words)
-STOPWORDS: frozenset[str] = frozenset({
-    "a", "about", "all", "an", "and", "are", "as", "at", "be", "been",
-    "but", "by", "can", "do", "for", "from", "had", "has", "have", "he",
-    "her", "his", "how", "i", "if", "in", "is", "it", "not", "of",
-    "on", "or", "so", "that", "the", "their", "this", "to", "was", "we",
-    "what", "when", "where", "which", "will", "with", "you",
-})
+STOPWORDS: frozenset[str] = frozenset(
+    {
+        "a",
+        "about",
+        "all",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "been",
+        "but",
+        "by",
+        "can",
+        "do",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "he",
+        "her",
+        "his",
+        "how",
+        "i",
+        "if",
+        "in",
+        "is",
+        "it",
+        "not",
+        "of",
+        "on",
+        "or",
+        "so",
+        "that",
+        "the",
+        "their",
+        "this",
+        "to",
+        "was",
+        "we",
+        "what",
+        "when",
+        "where",
+        "which",
+        "will",
+        "with",
+        "you",
+    }
+)
 
 
 class BM25:

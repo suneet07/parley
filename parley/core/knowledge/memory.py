@@ -9,12 +9,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from parley.core.knowledge.scoring import fuse_score
-
 from parley.core.knowledge.base import Passage
 from parley.core.knowledge.bm25 import BM25
 from parley.core.knowledge.chunking import Chunk, chunk_markdown
 from parley.core.knowledge.embeddings import Embedder, default_embedder
+from parley.core.knowledge.scoring import fuse_score
 
 if TYPE_CHECKING:
     from parley.config import BusinessConfig
@@ -115,11 +114,11 @@ class InMemoryRetriever:
         # Reciprocal Rank Fusion: rrf[i] = Σ 1/(60 + rank) (rank from 1)
         rrf = np.zeros(n, dtype=np.float64)
 
-        dense_top_indices = np.argsort(-dense)[:min(20, n)]
+        dense_top_indices = np.argsort(-dense)[: min(20, n)]
         for rank, idx in enumerate(dense_top_indices, start=1):
             rrf[idx] += 1.0 / (60.0 + rank)
 
-        sparse_top_indices = np.argsort(-sparse)[:min(20, n)]
+        sparse_top_indices = np.argsort(-sparse)[: min(20, n)]
         for rank, idx in enumerate(sparse_top_indices, start=1):
             if sparse[idx] > 0:
                 rrf[idx] += 1.0 / (60.0 + rank)

@@ -177,9 +177,7 @@ async def lookup_caller(ctx: ToolContext, phone: str) -> CallerProfile | None:
     db_path = await ensure_db(ctx.business_dir)
     async with aiosqlite.connect(db_path) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT customer_id, name, phone, email FROM customers"
-        ) as cursor:
+        async with db.execute("SELECT customer_id, name, phone, email FROM customers") as cursor:
             rows = await cursor.fetchall()
     for row in rows:
         if _normalize_phone(row["phone"]) == norm:
@@ -217,9 +215,7 @@ async def _fetch_order_with_customer(
     result = dict(row)
     delivered_date = result.get("delivered_date")
     if delivered_date:
-        result["days_since_delivery"] = (
-            date.today() - date.fromisoformat(delivered_date)
-        ).days
+        result["days_since_delivery"] = (date.today() - date.fromisoformat(delivered_date)).days
     else:
         result["days_since_delivery"] = None
     return result
@@ -257,10 +253,9 @@ async def verify_identity(ctx: ToolContext, args: VerifyIdentityArgs) -> ToolRes
         return ToolResult(ok=False, error="no_match")
 
     candidate = args.phone_or_email.strip()
-    phone_match = (
-        bool(_normalize_phone(candidate))
-        and _normalize_phone(candidate) == _normalize_phone(order["customer_phone"])
-    )
+    phone_match = bool(_normalize_phone(candidate)) and _normalize_phone(
+        candidate
+    ) == _normalize_phone(order["customer_phone"])
     email_match = candidate.lower() == order["customer_email"].strip().lower()
 
     if not (phone_match or email_match):
@@ -293,10 +288,7 @@ async def lookup_order(ctx: ToolContext, args: OrderIdArgs) -> ToolResult:
         return ToolResult(ok=False, error="not_found")
 
     raw_items: list[dict[str, Any]] = json.loads(order["items"])
-    items = [
-        {"name": it["name"], "qty": it["qty"], "price": it["price"]}
-        for it in raw_items
-    ]
+    items = [{"name": it["name"], "qty": it["qty"], "price": it["price"]} for it in raw_items]
     window = (
         ctx.business.policies.return_window_days
         if ctx.business.policies.return_window_days is not None
@@ -304,9 +296,7 @@ async def lookup_order(ctx: ToolContext, args: OrderIdArgs) -> ToolResult:
     )
     days_since = order["days_since_delivery"]
     return_eligible = (
-        order["status"] == "delivered"
-        and days_since is not None
-        and days_since <= window
+        order["status"] == "delivered" and days_since is not None and days_since <= window
     )
     return ToolResult(
         ok=True,
