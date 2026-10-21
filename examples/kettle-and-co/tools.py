@@ -406,6 +406,28 @@ async def start_return(ctx: ToolContext, args: StartReturnArgs) -> ToolResult:
     )
 
 
+async def _fetch_prior_refunds_and_credits(
+    ctx: ToolContext,
+    order_id: str,
+) -> tuple[float, float]:
+    norm_id = _normalize_order_id(order_id)
+    db_path = await ensure_db(ctx.business_dir)
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute(
+            "SELECT COALESCE(SUM(amount), 0.0) FROM refunds WHERE order_id = ?",
+            (norm_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            prior_refunds = float(row[0]) if row and row[0] is not None else 0.0
+        async with db.execute(
+            "SELECT COALESCE(SUM(amount), 0.0) FROM store_credits WHERE order_id = ?",
+            (norm_id,),
+        ) as cur:
+            row = await cur.fetchone()
+            prior_credits = float(row[0]) if row and row[0] is not None else 0.0
+    return prior_refunds, prior_credits
+
+
 @policy("issue_refund")
 async def _policy_issue_refund(ctx: ToolContext, args: IssueRefundArgs) -> PolicyDecision:
     order = await _fetch_order_with_customer(ctx, args.order_id)
@@ -435,11 +457,17 @@ async def _policy_issue_refund(ctx: ToolContext, args: IssueRefundArgs) -> Polic
     if args.amount <= 0:
         return PolicyDecision(False, "invalid_amount")
 
-    if args.amount > float(order["total"]):
-        return PolicyDecision(False, "amount_exceeds_order_total")
+    prior_refunds, prior_credits = await _fetch_prior_refunds_and_credits(ctx, order["order_id"])
+    prior_total = prior_refunds + prior_credits
+    if prior_total + args.amount > float(order["total"]):
+        return PolicyDecision(
+            False,
+            "exceeds_order_total",
+            alternatives=["transfer_to_human"],
+        )
 
     refund_max = ctx.business.policies.refund_max
-    if refund_max is not None and args.amount > refund_max:
+    if refund_max is not None and (prior_refunds + args.amount) > refund_max:
         return PolicyDecision(
             False,
             "exceeds_refund_limit",
@@ -511,8 +539,14 @@ async def _policy_offer_store_credit(
     if args.amount <= 0:
         return PolicyDecision(False, "invalid_amount")
 
-    if args.amount > float(order["total"]):
-        return PolicyDecision(False, "amount_exceeds_order_total")
+    prior_refunds, prior_credits = await _fetch_prior_refunds_and_credits(ctx, order["order_id"])
+    prior_total = prior_refunds + prior_credits
+    if prior_total + args.amount > float(order["total"]):
+        return PolicyDecision(
+            False,
+            "exceeds_order_total",
+            alternatives=["transfer_to_human"],
+        )
 
     return PolicyDecision(True)
 

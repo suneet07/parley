@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -113,51 +114,58 @@ class BrainProcessor(FrameProcessor):
         pushed_first_text = False
         pending_controls: list[Control] = []
 
+        if self._latency is not None:
+            if track_latency:
+                self._latency.mark_turn_start()
+            else:
+                self._latency.mark_turn_end()
+
         try:
-            async for ev in stream:
-                if isinstance(ev, SpeakDelta):
-                    if not ev.text:
-                        continue
-                    if not started_response:
-                        started_response = True
-                        await self.push_frame(LLMFullResponseStartFrame())
-                    if track_latency and not pushed_first_text:
-                        pushed_first_text = True
-                        if self._latency is not None:
-                            self._latency.mark_first_text()
-                    await self.push_frame(LLMTextFrame(ev.text))
-                elif isinstance(ev, Filler):
-                    if not ev.text:
-                        continue
-                    if not started_response:
-                        started_response = True
-                        await self.push_frame(LLMFullResponseStartFrame())
-                    if track_latency and not pushed_first_text:
-                        pushed_first_text = True
-                        if self._latency is not None:
-                            self._latency.mark_first_text()
-                    # In Pipecat 1.13, TTSService aggregates LLMTextFrame by sentence;
-                    # sentence-final punctuation + trailing space flushes the filler
-                    # immediately while keeping subsequent SpeakDelta tokens in the turn.
-                    filler_text = ev.text.strip()
-                    if filler_text and filler_text[-1] not in ".!?":
-                        filler_text += "."
-                    filler_text += " "
-                    await self.push_frame(LLMTextFrame(filler_text))
-                elif isinstance(ev, ToolStarted):
-                    logger.info("brain_tool_started", tool=ev.name)
-                elif isinstance(ev, ToolFinished):
-                    logger.info(
-                        "brain_tool_finished",
-                        tool=getattr(ev.event, "name", None),
-                        status=getattr(ev.event, "status", None),
-                    )
-                elif isinstance(ev, TurnDone):
-                    if started_response and not ended_response:
-                        ended_response = True
-                        await self.push_frame(LLMFullResponseEndFrame())
-                elif isinstance(ev, Control):
-                    pending_controls.append(ev)
+            async with contextlib.aclosing(stream) as agen:  # type: ignore[type-var]
+                async for ev in agen:
+                    if isinstance(ev, SpeakDelta):
+                        if not ev.text:
+                            continue
+                        if not started_response:
+                            started_response = True
+                            await self.push_frame(LLMFullResponseStartFrame())
+                        if track_latency and not pushed_first_text:
+                            pushed_first_text = True
+                            if self._latency is not None:
+                                self._latency.mark_first_text()
+                        await self.push_frame(LLMTextFrame(ev.text))
+                    elif isinstance(ev, Filler):
+                        if not ev.text:
+                            continue
+                        if not started_response:
+                            started_response = True
+                            await self.push_frame(LLMFullResponseStartFrame())
+                        if track_latency and not pushed_first_text:
+                            pushed_first_text = True
+                            if self._latency is not None:
+                                self._latency.mark_first_text()
+                        # In Pipecat 1.13, TTSService aggregates LLMTextFrame by sentence;
+                        # sentence-final punctuation + trailing space flushes the filler
+                        # immediately while keeping subsequent SpeakDelta tokens in the turn.
+                        filler_text = ev.text.strip()
+                        if filler_text and filler_text[-1] not in ".!?":
+                            filler_text += "."
+                        filler_text += " "
+                        await self.push_frame(LLMTextFrame(filler_text))
+                    elif isinstance(ev, ToolStarted):
+                        logger.info("brain_tool_started", tool=ev.name)
+                    elif isinstance(ev, ToolFinished):
+                        logger.info(
+                            "brain_tool_finished",
+                            tool=getattr(ev.event, "name", None),
+                            status=getattr(ev.event, "status", None),
+                        )
+                    elif isinstance(ev, TurnDone):
+                        if started_response and not ended_response:
+                            ended_response = True
+                            await self.push_frame(LLMFullResponseEndFrame())
+                    elif isinstance(ev, Control):
+                        pending_controls.append(ev)
 
             if started_response and not ended_response:
                 ended_response = True
@@ -172,6 +180,9 @@ class BrainProcessor(FrameProcessor):
             await self.push_frame(LLMTextFrame(_APOLOGY_TEXT))
             await self.push_frame(LLMFullResponseEndFrame())
             return
+        finally:
+            if track_latency and self._latency is not None:
+                self._latency.mark_turn_end()
 
         for ctrl in pending_controls:
             await self._on_control(ctrl)

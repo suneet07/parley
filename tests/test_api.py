@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
+from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 from twilio.request_validator import RequestValidator
 
+import parley.api.twilio_routes as twilio_routes
 from parley.api.server import create_app
 from parley.api.store import CallStore
 from parley.api.twilio_routes import WHISPERS
@@ -124,3 +130,96 @@ async def test_store_save_list_get_roundtrip_redacts_card(tmp_path: Path) -> Non
         assert missing_resp.status_code == 404
 
     await store.close()
+
+
+def test_twilio_ws_token_auth_and_one_time_use(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "t_ws.db"
+    store = CallStore(f"sqlite+aiosqlite:///{db_path.as_posix()}")
+    app = create_app(agent=DummyAgent(), store=store)  # type: ignore[arg-type]
+
+    captured_calls: list[dict[str, Any]] = []
+
+    async def _fake_run_call(transport: Any, **kwargs: Any) -> CallState:
+        captured_calls.append(kwargs)
+        return CallState(call_id=str(kwargs.get("call_id", "CA55555")))
+
+    monkeypatch.setattr(twilio_routes, "run_call", _fake_run_call)
+
+    with TestClient(app) as client:
+        app.state.settings.twilio_auth_token = ""
+        app.state.settings.public_base_url = "https://demo.example.com"
+
+        # 1. WS without token is rejected with 1008
+        with client.websocket_connect("/twilio/ws") as ws:
+            ws.send_text(json.dumps({"event": "connected", "protocol": "Call"}))
+            ws.send_text(
+                json.dumps(
+                    {
+                        "event": "start",
+                        "start": {
+                            "streamSid": "MZ111",
+                            "callSid": "CA55555",
+                            "customParameters": {},
+                        },
+                    }
+                )
+            )
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                ws.receive_text()
+            assert exc_info.value.code == 1008
+        assert len(captured_calls) == 0
+
+        # 2. Mint a token via POST /twilio/voice and accept WS with valid token
+        voice_resp = client.post(
+            "/twilio/voice",
+            data={"From": "+919876543210", "CallSid": "CA55555"},
+        )
+        assert voice_resp.status_code == 200
+        match = re.search(r'<Parameter name="token" value="([^"]+)"', voice_resp.text)
+        assert match is not None
+        minted_token = match.group(1)
+
+        with client.websocket_connect("/twilio/ws") as ws:
+            ws.send_text(json.dumps({"event": "connected", "protocol": "Call"}))
+            ws.send_text(
+                json.dumps(
+                    {
+                        "event": "start",
+                        "start": {
+                            "streamSid": "MZ111",
+                            "callSid": "CA55555",
+                            "customParameters": {
+                                "token": minted_token,
+                                "from": "+910000000000",
+                            },
+                        },
+                    }
+                )
+            )
+        assert len(captured_calls) == 1
+        assert captured_calls[0]["call_id"] == "CA55555"
+        # Caller number must come from the stored token record, not client customParameters
+        assert captured_calls[0]["caller_number"] == "+919876543210"
+
+        # 3. Reusing the same token is rejected with 1008
+        with client.websocket_connect("/twilio/ws") as ws:
+            ws.send_text(json.dumps({"event": "connected", "protocol": "Call"}))
+            ws.send_text(
+                json.dumps(
+                    {
+                        "event": "start",
+                        "start": {
+                            "streamSid": "MZ222",
+                            "callSid": "CA55555",
+                            "customParameters": {"token": minted_token},
+                        },
+                    }
+                )
+            )
+            with pytest.raises(WebSocketDisconnect) as exc_info:
+                ws.receive_text()
+            assert exc_info.value.code == 1008
+        assert len(captured_calls) == 1

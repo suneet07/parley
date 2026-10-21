@@ -220,9 +220,7 @@ def write_report(
     ]
 
     for cat in categories:
-        rate_str = (
-            f"{round(cat['passed'] / cat['total'] * 100)}%" if cat["total"] > 0 else "N/A"
-        )
+        rate_str = f"{round(cat['passed'] / cat['total'] * 100)}%" if cat["total"] > 0 else "N/A"
         md_lines.append(f"| {cat['name']} | {cat['passed']} | {cat['total']} | {rate_str} |")
 
     if regressions:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -25,6 +27,10 @@ router = APIRouter(prefix="/twilio", tags=["twilio"])
 
 # In-memory store mapping call_id -> warm-transfer whisper summary for human agents.
 WHISPERS: dict[str, str] = {}
+# One-time stream tokens minted by POST /twilio/voice for /twilio/ws authentication.
+STREAM_TOKENS: dict[str, dict[str, Any]] = {}
+max_phone_calls = 10
+_active_phone_calls = 0
 _warned_missing_auth_token = False
 
 
@@ -75,11 +81,24 @@ async def twilio_voice_webhook(request: Request) -> Response:
     from_number = str(form.get("From", ""))
     call_sid = str(form.get("CallSid", ""))
 
+    now = time.time()
+    expired_keys = [k for k, v in STREAM_TOKENS.items() if float(v.get("expires", 0)) <= now]
+    for k in expired_keys:
+        STREAM_TOKENS.pop(k, None)
+
+    stream_token = secrets.token_urlsafe(24)
+    STREAM_TOKENS[stream_token] = {
+        "call_sid": call_sid,
+        "from": from_number,
+        "expires": now + 120.0,
+    }
+
     ws_url = _public_ws_url(settings.public_base_url)
 
     vr = VoiceResponse()
     connect = Connect()
     stream = connect.stream(url=ws_url)
+    stream.parameter(name="token", value=stream_token)
     stream.parameter(name="from", value=from_number)
     stream.parameter(name="call_sid", value=call_sid)
     vr.append(connect)
@@ -141,15 +160,43 @@ async def twilio_whisper(call_id: str, request: Request) -> Response:
 @router.websocket("/ws")
 async def twilio_media_websocket(websocket: WebSocket) -> None:
     """Twilio Media Streams WebSocket endpoint driving the Pipecat 1.13 pipeline."""
+    global _active_phone_calls
     await websocket.accept()
+
+    if _active_phone_calls >= max_phone_calls:
+        await websocket.close(code=1013)
+        return
+
     settings, business = _get_settings_and_business(websocket.app)
 
     # In Pipecat 1.13, parse_telephony_websocket reads the initial 'connected' and 'start' frames.
-    _, call_data = await parse_telephony_websocket(websocket)
-    stream_sid: str = call_data.get("stream_id", "")
+    try:
+        _, call_data = await parse_telephony_websocket(websocket)
+    except Exception:
+        await websocket.close(code=1008)
+        return
+
+    stream_sid: str = call_data.get("stream_id") or ""
+    start_call_sid: str = call_data.get("call_id") or ""
     body: dict[str, Any] = call_data.get("body") or {}
-    call_sid: str = call_data.get("call_id") or str(body.get("call_sid", "")) or stream_sid
-    caller_number: str = str(body.get("from") or call_data.get("from") or "")
+    token = body.get("token")
+    if not isinstance(token, str) or not token:
+        await websocket.close(code=1008)
+        return
+
+    record = STREAM_TOKENS.pop(token, None)
+    now = time.time()
+    if (
+        record is None
+        or float(record.get("expires", 0)) <= now
+        or not start_call_sid
+        or record.get("call_sid") != start_call_sid
+    ):
+        await websocket.close(code=1008)
+        return
+
+    call_sid: str = str(record["call_sid"])
+    caller_number: str = str(record.get("from") or "")
 
     # Disable auto_hang_up if Twilio REST credentials are not set to avoid ValueError in 1.13.
     has_twilio_creds = bool(settings.twilio_account_sid and settings.twilio_auth_token)
@@ -174,14 +221,18 @@ async def twilio_media_websocket(websocket: WebSocket) -> None:
     async def _transfer_cb(cid: str, summary: str | None) -> bool:
         return await twilio_transfer(cid, summary, settings=settings, business=business)
 
-    await run_call(
-        transport,
-        agent=websocket.app.state.agent,
-        call_id=call_sid,
-        channel="phone",
-        direction="inbound",
-        caller_number=caller_number,
-        audio_sample_rate=8000,
-        control=CallControl(transfer=_transfer_cb),
-        store=getattr(websocket.app.state, "store", None),
-    )
+    _active_phone_calls += 1
+    try:
+        await run_call(
+            transport,
+            agent=websocket.app.state.agent,
+            call_id=call_sid,
+            channel="phone",
+            direction="inbound",
+            caller_number=caller_number,
+            audio_sample_rate=8000,
+            control=CallControl(transfer=_transfer_cb),
+            store=getattr(websocket.app.state, "store", None),
+        )
+    finally:
+        _active_phone_calls -= 1

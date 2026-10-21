@@ -172,3 +172,83 @@ def test_turn_latency_math_and_summary() -> None:
     assert summary["count"] == 2
     assert summary["p50_e2e_ms"] == pytest.approx(550.0)
     assert summary["p95_e2e_ms"] == pytest.approx(550.0)
+
+
+async def test_brain_processor_aclosing_runs_generator_finally_on_cancel() -> None:
+    import asyncio
+
+    entered = asyncio.Event()
+    finally_ran = False
+
+    class _CancelableSession:
+        async def start(self) -> AsyncIterator[Any]:
+            yield SpeakDelta(text="hi")
+
+        async def reprompt(self, count: int) -> AsyncIterator[Any]:
+            yield SpeakDelta(text="still there?")
+
+        async def respond(self, user_text: str) -> AsyncIterator[Any]:
+            nonlocal finally_ran
+            try:
+                entered.set()
+                await asyncio.Event().wait()
+                yield SpeakDelta(text="never reached")
+            finally:
+                finally_ran = True
+
+    async def on_control(ctrl: Control) -> None:
+        return None
+
+    processor = BrainProcessor(_CancelableSession(), on_control=on_control)  # type: ignore[arg-type]
+    task = asyncio.create_task(
+        processor._consume_brain_stream(processor._session.respond("hello"), track_latency=True)
+    )
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert finally_ran is True
+
+
+async def test_latency_tracker_ignores_greeting_and_reprompt_audio() -> None:
+    from types import SimpleNamespace
+
+    from pipecat.frames.frames import (
+        BotStartedSpeakingFrame,
+        BotStoppedSpeakingFrame,
+        UserStoppedSpeakingFrame,
+    )
+
+    tracker = LatencyTracker()
+
+    def _push(frame: Any) -> Any:
+        return SimpleNamespace(frame=frame)
+
+    # 1. Greeting audio before any user turn -> ignored
+    await tracker.on_push_frame(_push(BotStartedSpeakingFrame()))  # type: ignore[arg-type]
+    assert tracker.turns == []
+
+    # 2. User stops speaking (creates turn with transcript_at=None); audio before transcript -> ignored
+    await tracker.on_push_frame(_push(UserStoppedSpeakingFrame()))  # type: ignore[arg-type]
+    assert len(tracker.turns) == 1
+    assert tracker.turns[0].transcript_at is None
+    await tracker.on_push_frame(_push(BotStartedSpeakingFrame()))  # type: ignore[arg-type]
+    assert tracker.turns[0].first_audio_at is None
+
+    # 3. Respond turn starts and marks transcript -> BotStartedSpeakingFrame is recorded
+    tracker.mark_turn_start()
+    tracker.mark_transcript()
+    tracker.mark_first_text()
+    assert not tracker.bot_stopped_speaking.is_set()
+    await tracker.on_push_frame(_push(BotStartedSpeakingFrame()))  # type: ignore[arg-type]
+    assert tracker.turns[0].first_audio_at is not None
+    await tracker.on_push_frame(_push(BotStoppedSpeakingFrame()))  # type: ignore[arg-type]
+    assert tracker.bot_stopped_speaking.is_set()
+    tracker.mark_turn_end()
+
+    # 4. Subsequent reprompt audio on a turn after mark_turn_end -> ignored
+    await tracker.on_push_frame(_push(UserStoppedSpeakingFrame()))  # type: ignore[arg-type]
+    tracker.mark_transcript()
+    tracker.mark_turn_end()
+    await tracker.on_push_frame(_push(BotStartedSpeakingFrame()))  # type: ignore[arg-type]
+    assert tracker.turns[1].first_audio_at is None

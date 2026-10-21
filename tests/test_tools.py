@@ -487,3 +487,146 @@ async def test_builtins_and_remaining_business_tools(
     assert end_res.status == "ok"
     assert end_res.control == "end_call"
     assert end_res.payload == {"ok": True, "ending": True}
+
+
+async def test_cumulative_refunds_and_store_credits_blocked(
+    kettle_env: tuple[BusinessConfig, ToolRegistry, ToolGateway, ToolContext],
+) -> None:
+    _, _, gw, ctx = kettle_env
+
+    # Verify as Rahul (KC-10501, total ₹3999)
+    await gw.call(
+        "verify_identity",
+        {"order_id": "KC-10501", "phone_or_email": "9822233332"},
+        ctx,
+    )
+
+    # First ₹2000 refund succeeds
+    ctx.state.turn_index = 1
+    prop1 = await gw.call("issue_refund", {"order_id": "KC-10501", "amount": 2000}, ctx)
+    assert prop1.status == "confirmation_required"
+    ctx.state.turn_index = 2
+    ctx.state.transcript.append(Turn(role="user", text="yes please"))
+    conf1 = await gw.call("confirm_action", {"confirmed": True}, ctx)
+    assert conf1.status == "ok"
+
+    # Second ₹2000 refund on KC-10501 (2000 + 2000 > 3999) -> blocked exceeds_order_total
+    ctx.state.turn_index = 3
+    prop2 = await gw.call("issue_refund", {"order_id": "KC-10501", "amount": 2000}, ctx)
+    assert prop2.status == "blocked"
+    assert prop2.payload["reason"] == "exceeds_order_total"
+    assert prop2.payload["alternatives"] == ["transfer_to_human"]
+
+    # Store credit of ₹2000 after ₹2000 refund (2000 + 2000 > 3999) -> blocked exceeds_order_total
+    credit_prop = await gw.call(
+        "offer_store_credit",
+        {"order_id": "KC-10501", "amount": 2000},
+        ctx,
+    )
+    assert credit_prop.status == "blocked"
+    assert credit_prop.payload["reason"] == "exceeds_order_total"
+    assert credit_prop.payload["alternatives"] == ["transfer_to_human"]
+
+    # Cumulative refund_max check on KC-10477 (total ₹7800, refund_max=5000)
+    await gw.call(
+        "verify_identity",
+        {"order_id": "KC-10477", "phone_or_email": "neha.g@example.com"},
+        ctx,
+    )
+    ctx.state.turn_index = 4
+    r1 = await gw.call("issue_refund", {"order_id": "KC-10477", "amount": 3000}, ctx)
+    assert r1.status == "confirmation_required"
+    ctx.state.turn_index = 5
+    ctx.state.transcript.append(Turn(role="user", text="yes"))
+    r1_conf = await gw.call("confirm_action", {"confirmed": True}, ctx)
+    assert r1_conf.status == "ok"
+
+    ctx.state.turn_index = 6
+    r2 = await gw.call("issue_refund", {"order_id": "KC-10477", "amount": 2500}, ctx)
+    assert r2.status == "blocked"
+    assert r2.payload["reason"] == "exceeds_refund_limit"
+    assert r2.payload["escalate"] is True
+
+
+async def test_stale_confirmation_expired_and_buried_affirmative_blocked(
+    kettle_env: tuple[BusinessConfig, ToolRegistry, ToolGateway, ToolContext],
+) -> None:
+    _, _, gw, ctx = kettle_env
+
+    await gw.call(
+        "verify_identity",
+        {"order_id": "KC-10501", "phone_or_email": "9822233332"},
+        ctx,
+    )
+    ctx.state.turn_index = 1
+    prop = await gw.call(
+        "start_return",
+        {"order_id": "KC-10501", "reason": "damaged"},
+        ctx,
+    )
+    assert prop.status == "confirmation_required"
+    assert ctx.state.pending_action is not None
+    assert ctx.state.pending_action.created_turn == 1
+
+    # Confirm two turns later -> confirmation_expired and pending cleared
+    ctx.state.turn_index = 3
+    ctx.state.transcript.append(Turn(role="user", text="yes"))
+    expired = await gw.call("confirm_action", {"confirmed": True}, ctx)
+    assert expired.status == "blocked"
+    assert expired.payload == {
+        "error": "confirmation_expired",
+        "instruction": "Read the action back again and ask the caller to confirm.",
+    }
+    assert ctx.state.pending_action is None
+
+    # Re-proposing the same action resets created_turn to current turn
+    ctx.state.turn_index = 4
+    await gw.call("start_return", {"order_id": "KC-10501", "reason": "damaged"}, ctx)
+    assert ctx.state.pending_action is not None
+    assert ctx.state.pending_action.created_turn == 4
+
+    ctx.state.turn_index = 5
+    await gw.call("start_return", {"order_id": "KC-10501", "reason": "damaged"}, ctx)
+    assert ctx.state.pending_action.created_turn == 5
+
+    # Long utterance with buried affirmative -> caller_did_not_confirm
+    ctx.state.turn_index = 6
+    ctx.state.transcript.append(
+        Turn(role="user", text="ok so what about my other order, is it shipped yet right")
+    )
+    buried = await gw.call("confirm_action", {"confirmed": True}, ctx)
+    assert buried.status == "blocked"
+    assert buried.payload["error"] == "caller_did_not_confirm"
+    assert ctx.state.pending_action is not None
+
+
+async def test_verify_identity_brute_force_locked_after_three_failures(
+    kettle_env: tuple[BusinessConfig, ToolRegistry, ToolGateway, ToolContext],
+) -> None:
+    _, _, gw, ctx = kettle_env
+
+    for _ in range(3):
+        res = await gw.call(
+            "verify_identity",
+            {"order_id": "KC-10482", "phone_or_email": "wrong@example.com"},
+            ctx,
+        )
+        assert res.status == "error"
+        assert res.payload["error"] == "no_match"
+
+    # 4th attempt is locked even with valid credentials
+    locked = await gw.call(
+        "verify_identity",
+        {"order_id": "KC-10482", "phone_or_email": "priya.sharma@example.com"},
+        ctx,
+    )
+    assert locked.status == "blocked"
+    assert locked.payload == {
+        "error": "verification_locked",
+        "escalate": True,
+        "instruction": (
+            "Apologize, say you can't verify the account over the phone right now, "
+            "and offer a human or a ticket."
+        ),
+    }
+    assert not ctx.state.verified

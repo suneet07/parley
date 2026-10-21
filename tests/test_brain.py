@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import json
 import shutil
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
 from parley.config import BusinessConfig, load_business
 from parley.core.brain import (
@@ -15,10 +19,12 @@ from parley.core.brain import (
     Control,
     Filler,
     SpeakDelta,
+    ToolStarted,
     TurnDone,
 )
 from parley.core.knowledge.base import Passage
 from parley.core.providers.fake import FakeLLM
+from parley.core.tools.base import ToolContext, ToolKind, ToolResult, ToolSpec
 from parley.core.tools.registry import ToolRegistry
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -65,7 +71,7 @@ async def test_start_greeting_contains_ai_disclosure_and_business_name(
     assert "Kettle & Co" in spoken
     assert "AI assistant" in spoken
     assert "recorded" in spoken
-    assert "Rahul" in spoken
+    assert "Rahul" not in spoken
     assert session.state.verified is False
     assert isinstance(events[-1], TurnDone)
     assert len(session.state.transcript) == 1
@@ -148,6 +154,8 @@ async def test_self_confirmation_in_same_turn_is_blocked(
 async def test_human_request_forces_transfer_tool_choice_and_emits_control(
     kettle_business: BusinessConfig,
 ) -> None:
+    biz = kettle_business.model_copy(deep=True)
+    biz.escalation.transfer_to = "+910000000000"
     llm = FakeLLM(
         [
             [
@@ -162,7 +170,7 @@ async def test_human_request_forces_transfer_tool_choice_and_emits_control(
             "Connecting you to a team member now.",
         ]
     )
-    session = _make_session(kettle_business, llm)
+    session = _make_session(biz, llm)
     _ = [ev async for ev in session.start()]
 
     events = [ev async for ev in session.respond("let me talk to a real person")]
@@ -176,6 +184,38 @@ async def test_human_request_forces_transfer_tool_choice_and_emits_control(
     assert controls[0].action == "transfer"
     assert session.state.ended is True
     assert session.state.disposition == "escalated"
+
+
+async def test_human_request_without_transfer_number_falls_back_to_ticket(
+    kettle_business: BusinessConfig,
+) -> None:
+    assert kettle_business.escalation.transfer_to is None
+    llm = FakeLLM(
+        [
+            [
+                (
+                    "transfer_to_human",
+                    {
+                        "summary": "Caller wants a human representative.",
+                        "reason": "human_requested",
+                    },
+                )
+            ],
+            "No one is available right now, so I have created a high-priority ticket for you.",
+            '{"summary": "Created fallback ticket.", "disposition": "unknown", '
+            '"intents": ["human"], "follow_ups": [], "knowledge_gaps": []}',
+        ]
+    )
+    session = _make_session(kettle_business, llm)
+    _ = [ev async for ev in session.start()]
+
+    events = [ev async for ev in session.respond("let me talk to a real person")]
+    controls = [ev for ev in events if isinstance(ev, Control)]
+    assert controls == []
+    assert session.state.ended is False
+
+    final_state = await session.end()
+    assert final_state.disposition == "ticket_created"
 
 
 async def test_prompt_injection_adds_guard_note_to_turn_context(
@@ -238,6 +278,111 @@ async def test_barge_in_cancellation_keeps_history_valid_and_marks_interrupted(
     assert last_turn.role == "assistant"
     assert last_turn.text == "Sure, I can"
     assert last_turn.interrupted is True
+
+
+async def test_write_tool_shielded_on_barge_in_records_event_and_repairs_history(
+    kettle_business: BusinessConfig,
+) -> None:
+    class SlowWriteArgs(BaseModel):
+        note: str
+
+    async def _slow_write(ctx: ToolContext, args: SlowWriteArgs) -> ToolResult:
+        await asyncio.sleep(0.1)
+        return ToolResult(ok=True, data={"written": args.note})
+
+    slow_spec = ToolSpec(
+        name="slow_write",
+        description="Slow write tool",
+        kind=ToolKind.WRITE,
+        args_model=SlowWriteArgs,
+        fn=_slow_write,
+        requires_confirmation=False,
+    )
+
+    base_reg = ToolRegistry.for_business(kettle_business)
+    custom_reg = ToolRegistry(tools=[*base_reg.all(), slow_spec], policies={})
+    llm = FakeLLM([[("slow_write", {"note": "saved-despite-cancel"})], "Done!"])
+    agent = Agent(business=kettle_business, llm=llm, registry=custom_reg)
+    session = agent.new_session()
+    _ = [ev async for ev in session.start()]
+
+    started = asyncio.Event()
+
+    async def consume() -> None:
+        async with contextlib.aclosing(session.respond("please save my note")) as agen:
+            async for ev in agen:
+                if isinstance(ev, ToolStarted) and ev.name == "slow_write":
+                    started.set()
+
+    task = asyncio.create_task(consume())
+    await started.wait()
+    await asyncio.sleep(0.02)  # the tool is now inside asyncio.sleep(0.1)
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    # The WRITE tool must have completed via shield and recorded its ToolEvent as ok
+    write_events = [ev for ev in session.state.tool_events if ev.name == "slow_write"]
+    assert len(write_events) == 1
+    assert write_events[0].status == "ok"
+    assert write_events[0].result == {"ok": True, "written": "saved-despite-cancel"}
+
+    # History repair must synthesize the tool message from the ToolEvent result, NOT "cancelled"
+    tool_msgs = [m for m in session.history if m.role == "tool"]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0].content is not None
+    parsed_reply = json.loads(tool_msgs[0].content)
+    assert parsed_reply.get("error") != "cancelled"
+    assert parsed_reply == {"ok": True, "written": "saved-despite-cancel"}
+
+
+async def test_on_interrupted_after_filler_during_tool_call_preserves_greeting(
+    kettle_business: BusinessConfig,
+) -> None:
+    class SlowReadArgs(BaseModel):
+        q: str
+
+    async def _slow_read(ctx: ToolContext, args: SlowReadArgs) -> ToolResult:
+        await asyncio.sleep(0.2)
+        return ToolResult(ok=True, data={"answer": args.q})
+
+    slow_read_spec = ToolSpec(
+        name="slow_read",
+        description="Slow read tool",
+        kind=ToolKind.READ,
+        args_model=SlowReadArgs,
+        fn=_slow_read,
+    )
+    base_reg = ToolRegistry.for_business(kettle_business)
+    custom_reg = ToolRegistry(tools=[*base_reg.all(), slow_read_spec], policies={})
+    llm = FakeLLM([[("slow_read", {"q": "status"})], "Here is the status."])
+    agent = Agent(business=kettle_business, llm=llm, registry=custom_reg)
+    session = agent.new_session()
+    _ = [ev async for ev in session.start()]
+
+    greeting_content = session.history[0].content
+    assert greeting_content is not None
+    assert "Kettle & Co" in greeting_content
+
+    agen = session.respond("check status")
+    filler_seen = None
+    async for ev in agen:
+        if isinstance(ev, Filler):
+            filler_seen = ev.text
+        elif isinstance(ev, ToolStarted):
+            break
+    await agen.aclose()
+
+    assert filler_seen == "One sec, let me check that."
+    # Filler text is recorded in the assistant Turn for this turn
+    assert session.state.transcript[-1].role == "assistant"
+    assert session.state.transcript[-1].text == "One sec, let me check that."
+
+    # Barge-in after filler during tool call must NOT overwrite the greeting message in history
+    session.on_interrupted("One sec, let me check that.")
+    assert session.history[0].content == greeting_content
+    assert session.state.transcript[-1].text == "One sec, let me check that."
+    assert session.state.transcript[-1].interrupted is True
 
 
 async def test_reprompt_three_times_ends_call(
@@ -324,3 +469,31 @@ async def test_low_confidence_knowledge_gap_recorded(
     _ = [ev async for ev in session.respond(question)]
     state = await session.end()
     assert question in state.knowledge_gaps
+
+
+async def test_disposition_heuristics_and_reprompt_preserves_existing_disposition(
+    kettle_business: BusinessConfig,
+) -> None:
+    # 1. Read-only + verify tools alone do not infer "resolved" when LLM summary returns unknown
+    llm = FakeLLM(
+        [
+            [
+                ("verify_identity", {"order_id": "KC-10501", "phone_or_email": "9822233332"}),
+                ("lookup_order", {"order_id": "KC-10501"}),
+            ],
+            "Your order KC-10501 was delivered.",
+            "NOT JSON",
+        ]
+    )
+    s1 = _make_session(kettle_business, llm)
+    _ = [ev async for ev in s1.start()]
+    _ = [ev async for ev in s1.respond("check my order KC-10501, phone 9822233332")]
+    state1 = await s1.end()
+    assert state1.disposition == "unknown"
+
+    # 2. reprompt(3) does not overwrite an existing non-"unknown" disposition
+    s2 = _make_session(kettle_business, FakeLLM([]))
+    _ = [ev async for ev in s2.start()]
+    s2.state.disposition = "resolved"
+    _ = [ev async for ev in s2.reprompt(3)]
+    assert s2.state.disposition == "resolved"

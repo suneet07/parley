@@ -193,12 +193,14 @@ async def _tools_node(state: TurnGraphState) -> dict[str, Any]:
             phrase = FILLER_PHRASES[session._filler_index % len(FILLER_PHRASES)]
             session._filler_index += 1
             filler_emitted = True
+            session._turn_filler = phrase
             writer(Filler(text=phrase))
 
         writer(ToolStarted(name=tc.name))
         result = await session.agent.gateway.call(tc.name, tc.arguments, ctx)
         writer(ToolFinished(event=result.event))
 
+        session._recorded_tool_event_ids.add(id(result.event))
         session.history.append(
             ChatMessage(
                 role="tool",
@@ -207,12 +209,9 @@ async def _tools_node(state: TurnGraphState) -> dict[str, Any]:
             )
         )
 
-        control_action = result.control
-        if control_action is None and tc.name == "transfer_to_human" and result.status == "ok":
-            control_action = "transfer"
-        if control_action in ("transfer", "end_call"):
+        if result.control in ("transfer", "end_call"):
             control = Control(
-                action=cast(Literal["transfer", "end_call"], control_action),
+                action=cast(Literal["transfer", "end_call"], result.control),
                 summary=session.state.summary,
             )
             session._turn_control = control

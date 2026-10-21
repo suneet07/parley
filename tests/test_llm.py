@@ -277,3 +277,98 @@ def test_build_llm_chain_skips_missing_keys_and_raises_when_empty() -> None:
     assert chain.providers[0].stream_usage is True
     assert isinstance(chain.providers[1], OpenAICompatLLM)
     assert chain.providers[1].stream_usage is False
+
+
+async def test_openai_stream_closed_and_first_chunk_disarms_timeout_and_all_breakers_open() -> None:
+    msg = [ChatMessage(role="user", content="check order")]
+    closed_count = 0
+
+    class _FakeStream:
+        def __aiter__(self) -> AsyncIterator[Any]:
+            return self._gen()
+
+        async def _gen(self) -> AsyncIterator[Any]:
+            # First chunk arrives immediately (tool call delta), second chunk after 0.08s
+            yield SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id="tc_1",
+                                    function=SimpleNamespace(
+                                        name="lookup_order",
+                                        arguments='{"order_id":',
+                                    ),
+                                )
+                            ],
+                        ),
+                        finish_reason=None,
+                    )
+                ],
+                usage=None,
+            )
+            await asyncio.sleep(0.08)
+            yield SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content=None,
+                            tool_calls=[
+                                SimpleNamespace(
+                                    index=0,
+                                    id=None,
+                                    function=SimpleNamespace(
+                                        name=None,
+                                        arguments='"KC-10501"}',
+                                    ),
+                                )
+                            ],
+                        ),
+                        finish_reason="tool_calls",
+                    )
+                ],
+                usage=None,
+            )
+
+        async def close(self) -> None:
+            nonlocal closed_count
+            closed_count += 1
+
+    async def _create(**kwargs: Any) -> Any:
+        return _FakeStream()
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    primary = OpenAICompatLLM(
+        name="groq",
+        model="m-groq",
+        api_key="k",
+        base_url="https://api.groq.com/openai/v1",
+        client=client,  # type: ignore[arg-type]
+    )
+    backup = FakeLLM(["backup"], name="backup", model="m-backup")
+
+    # first_token_timeout_s=0.04s is shorter than total tool-call stream (0.08s),
+    # but first chunk arrives at 0s -> primary must succeed without falling back
+    fb = FallbackLLM([primary, backup], first_token_timeout_s=0.04)
+    events = [ev async for ev in fb.stream(msg)]
+    assert any(isinstance(e, ToolCallsReady) for e in events)
+    assert len(backup.calls) == 0
+    assert closed_count == 1
+
+    # When every breaker is open, try the provider whose cooldown expires first
+    p_later = FakeLLM(["from p_later"], name="later", model="m-later")
+    p_sooner = FakeLLM(["from p_sooner"], name="sooner", model="m-sooner")
+    fb_open = FallbackLLM([p_later, p_sooner], breaker_threshold=1, breaker_cooldown_s=60.0)
+    import time
+
+    now = time.monotonic()
+    fb_open._opened_until[0] = now + 50.0
+    fb_open._opened_until[1] = now + 10.0
+
+    out = [ev async for ev in fb_open.stream(msg)]
+    assert "".join(e.text for e in out if isinstance(e, TextDelta)) == "from p_sooner"
+    assert len(p_later.calls) == 0
+    assert len(p_sooner.calls) == 1

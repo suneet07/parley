@@ -15,11 +15,11 @@ from parley.core.brain.events import AgentEvent, Control, SpeakDelta, TurnDone
 from parley.core.brain.graph import build_turn_graph, run_turn_graph
 from parley.core.brain.guard import check_turn
 from parley.core.brain.prompts import build_turn_context
-from parley.core.brain.state import CallState, Disposition, Turn, utcnow
+from parley.core.brain.state import CallState, Disposition, ToolEvent, Turn, utcnow
 from parley.core.knowledge.ingest import build_retriever
 from parley.core.providers.llm import build_llm_chain
 from parley.core.providers.llm_base import LLM, ChatMessage, TextDelta, Usage
-from parley.core.tools.base import ToolContext
+from parley.core.tools.base import ToolContext, ToolKind
 from parley.core.tools.gateway import ToolGateway
 from parley.core.tools.registry import ToolRegistry
 
@@ -161,10 +161,13 @@ class CallSession:
         self.history: list[ChatMessage] = []
         self.outbound_goal = outbound_goal
         self._filler_index = 0
+        self._turn_filler: str = ""
         self._turn_text_parts: list[str] = []
         self._turn_usages: list[Usage] = []
         self._turn_control: Control | None = None
         self._knowledge_gaps: list[str] = []
+        self._answered_faq = False
+        self._recorded_tool_event_ids: set[int] = set()
         self._wrapup_done = False
 
     def tool_context(self) -> ToolContext:
@@ -196,7 +199,7 @@ class CallSession:
             greeting = (
                 f"Hi, you've reached {biz_name}. I'm an AI assistant and this call may be recorded."
             )
-            if self.state.caller and self.state.caller.name:
+            if self.state.verified and self.state.caller and self.state.caller.name:
                 first_name = self.state.caller.name.split()[0]
                 greeting += f" Hi {first_name}, good to hear from you."
             tail = self.agent.business.greeting or "How can I help?"
@@ -214,6 +217,15 @@ class CallSession:
         latency_ms = (time.perf_counter() - start_t) * 1000.0
         yield TurnDone(text=greeting, usage=[], latency_ms=latency_ms)
 
+    def _find_unrecorded_tool_event(self, tc_name: str) -> ToolEvent | None:
+        for ev in reversed(self.state.tool_events):
+            if id(ev) in self._recorded_tool_event_ids:
+                continue
+            if ev.name == tc_name or tc_name == ToolGateway.CONFIRM_TOOL:
+                self._recorded_tool_event_ids.add(id(ev))
+                return ev
+        return None
+
     def _repair_history(self) -> None:
         """Ensure every assistant tool_calls entry has a matching tool reply message."""
         answered_ids = {
@@ -222,19 +234,17 @@ class CallSession:
             if msg.role == "tool" and msg.tool_call_id is not None
         }
         repaired: list[ChatMessage] = []
-        for idx, msg in enumerate(self.history):
+        for msg in self.history:
             repaired.append(msg)
             if msg.role == "assistant" and msg.tool_calls:
-                # Check which tool calls are answered immediately or later in history
-                next_idx = idx + 1
-                while next_idx < len(self.history) and self.history[next_idx].role == "tool":
-                    next_idx += 1
                 for tc in msg.tool_calls:
                     if tc.id not in answered_ids:
+                        ev = self._find_unrecorded_tool_event(tc.name)
+                        reply_payload = ev.result if ev is not None else {"error": "cancelled"}
                         repaired.append(
                             ChatMessage(
                                 role="tool",
-                                content=json.dumps({"error": "cancelled"}),
+                                content=json.dumps(reply_payload),
                                 tool_call_id=tc.id,
                             )
                         )
@@ -260,7 +270,19 @@ class CallSession:
                 return "callback_booked"
             if ev.name in ("create_ticket", "transfer_to_human"):
                 return "ticket_created"
-        if any(ev.status == "ok" for ev in self.state.tool_events):
+        has_write_ok = any(
+            ev.status == "ok"
+            and (spec := self.agent.registry.get(ev.name)) is not None
+            and spec.kind == ToolKind.WRITE
+            for ev in self.state.tool_events
+        )
+        has_answered_faq = self._answered_faq or any(
+            ev.name == "search_kb"
+            and ev.status == "ok"
+            and not ev.result.get("low_confidence", False)
+            for ev in self.state.tool_events
+        )
+        if has_write_ok or has_answered_faq:
             return "resolved"
         if not any(t.role == "user" for t in self.state.transcript):
             return "abandoned"
@@ -274,6 +296,18 @@ class CallSession:
 
         start_t = time.perf_counter()
         self.state.turn_index += 1
+        if (
+            self.state.pending_action is not None
+            and self.state.turn_index > self.state.pending_action.created_turn + 1
+        ):
+            logger.info(
+                "pending_action_expired",
+                tool=self.state.pending_action.name,
+                created_turn=self.state.pending_action.created_turn,
+                turn_index=self.state.turn_index,
+            )
+            self.state.pending_action = None
+
         self.state.transcript.append(Turn(role="user", text=text))
         self.history.append(ChatMessage(role="user", content=text))
 
@@ -293,9 +327,12 @@ class CallSession:
                 self._knowledge_gaps.append(text)
             if text not in self.state.knowledge_gaps:
                 self.state.knowledge_gaps.append(text)
+        elif max_score >= 0.35 and guard.intent in LOW_CONFIDENCE_INTENTS:
+            self._answered_faq = True
 
         turn_context = build_turn_context(passages, guard, self.state)
 
+        self._turn_filler = ""
         self._turn_text_parts = []
         self._turn_usages = []
         self._turn_control = None
@@ -306,7 +343,13 @@ class CallSession:
                 yield event
         finally:
             self._repair_history()
-            full_text = "".join(self._turn_text_parts)
+            body_text = "".join(self._turn_text_parts)
+            if self._turn_filler and body_text:
+                full_text = f"{self._turn_filler} {body_text}"
+            elif self._turn_filler:
+                full_text = self._turn_filler
+            else:
+                full_text = body_text
             turn_tool_events = list(self.state.tool_events[turn_events_start:])
             self.state.transcript.append(
                 Turn(
@@ -338,19 +381,21 @@ class CallSession:
         """Handle barge-in by truncating the last assistant message and turn to what was heard."""
         for idx in range(len(self.history) - 1, -1, -1):
             msg = self.history[idx]
-            if msg.role == "assistant" and (msg.content is not None or msg.tool_calls):
-                if msg.content is not None or not any(
-                    m.role == "assistant" and m.content is not None for m in self.history
-                ):
+            if msg.role == "user":
+                break
+            if msg.role == "assistant":
+                if msg.content is not None:
                     if heard_text:
                         msg.content = f"{heard_text} —"
                     else:
                         msg.content = None
                         if not msg.tool_calls:
                             self.history.pop(idx)
-                    break
+                break
 
         for turn in reversed(self.state.transcript):
+            if turn.role == "user":
+                break
             if turn.role == "assistant":
                 turn.text = heard_text
                 turn.interrupted = True
@@ -372,7 +417,8 @@ class CallSession:
         if silence_count >= 3:
             self.state.ended = True
             if self.state.disposition == "unknown":
-                self.state.disposition = "abandoned"
+                inferred = self._infer_disposition()
+                self.state.disposition = inferred if inferred != "unknown" else "abandoned"
             yield Control(action="end_call")
         yield TurnDone(text=text, usage=[], latency_ms=0.0)
 
@@ -440,6 +486,7 @@ class CallSession:
                     isinstance(raw_disp, str)
                     and raw_disp in VALID_DISPOSITIONS
                     and self.state.disposition != "escalated"
+                    and (raw_disp != "unknown" or self.state.disposition == "unknown")
                 ):
                     self.state.disposition = cast(Disposition, raw_disp)
 
@@ -467,7 +514,9 @@ class CallSession:
             self.state.summary = self._heuristic_summary(reason)
 
         inferred = self._infer_disposition()
-        if self.state.disposition == "unknown" and inferred != "unknown":
+        if inferred in ("escalated", "callback_booked", "ticket_created"):
+            self.state.disposition = inferred
+        elif self.state.disposition == "unknown" and inferred != "unknown":
             self.state.disposition = inferred
 
         for gap in self._knowledge_gaps:

@@ -34,7 +34,7 @@ def build_system_prompt(business: BusinessConfig, state: CallState, now: datetim
     local_time_str = local_now.strftime("%Y-%m-%d %H:%M %Z (%A)")
 
     first_name = "unknown"
-    if state.caller and state.caller.name:
+    if state.verified and state.caller and state.caller.name:
         first_name = state.caller.name.split()[0]
     verified_str = "yes" if state.verified else "no"
     pending_str = state.pending_action.confirm_prompt if state.pending_action else "none"

@@ -114,6 +114,10 @@ async def run_call(
                 await pipeline_task.queue_frame(EndFrame())
         elif ctrl.action == "transfer":
             end_reason = "transferred"
+            try:
+                await asyncio.wait_for(latency.bot_stopped_speaking.wait(), timeout=8.0)
+            except TimeoutError:
+                logger.warning("transfer_wait_for_speech_timeout", call_id=call_id)
             transferred = False
             if control is not None:
                 try:

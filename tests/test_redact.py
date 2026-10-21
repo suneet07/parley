@@ -89,3 +89,53 @@ def test_redact_state_deep_copy_and_nested_fields() -> None:
     assert turn_ev["result"]["amount"] == "₹2499"
     assert redacted["tool_events"][0]["args"]["pan"] == "[PAN]"
     assert redacted["tool_events"][0]["result"]["card"] == "[CARD]"
+
+
+def test_redact_state_masks_knowledge_gaps_summary_and_caller_last_name() -> None:
+    state = {
+        "call_id": "call-999",
+        "tenant_id": "kettle",
+        "direction": "inbound",
+        "channel": "phone",
+        "disposition": "resolved",
+        "caller": {
+            "customer_id": "CUST-001",
+            "name": "Priya Sharma",
+            "phone": "+919811122221",
+            "email": "priya.sharma@example.com",
+        },
+        "summary": "Caller gave card 4532 0151 1283 0366 during wrap-up.",
+        "knowledge_gaps": ["Can I pay with card 4111 1111 1111 1111 for wholesale orders?"],
+        "follow_ups": ["Call back +91 98765 43210 regarding invoice"],
+        "escalation_reason": "Customer PAN ABCDE1234F verification issue",
+        "pending_action": {
+            "name": "issue_refund",
+            "args": {"order_id": "KC-10482", "card": "4532015112830366"},
+            "confirm_prompt": "refund to card 4532 0151 1283 0366",
+            "created_turn": 1,
+        },
+        "tool_events": [
+            {
+                "name": "verify_identity",
+                "status": "ok",
+                "args": {"phone_or_email": "priya.sharma@example.com"},
+                "result": {"ok": True},
+                "reason": None,
+                "turn": 1,
+            }
+        ],
+    }
+
+    redacted = redact_state(state)
+    assert redacted["summary"] == "Caller gave card [CARD] during wrap-up."
+    assert redacted["knowledge_gaps"] == ["Can I pay with card [CARD] for wholesale orders?"]
+    assert redacted["follow_ups"] == ["Call back ******3210 regarding invoice"]
+    assert redacted["escalation_reason"] == "Customer PAN [PAN] verification issue"
+    assert redacted["caller"]["name"] == "Priya"
+    assert redacted["caller"]["phone"] == "******2221"
+    assert redacted["caller"]["email"] == "p***@example.com"
+    assert redacted["pending_action"]["name"] == "issue_refund"
+    assert redacted["pending_action"]["args"]["card"] == "[CARD]"
+    assert redacted["pending_action"]["confirm_prompt"] == "refund to card [CARD]"
+    assert redacted["tool_events"][0]["name"] == "verify_identity"
+    assert redacted["tool_events"][0]["status"] == "ok"

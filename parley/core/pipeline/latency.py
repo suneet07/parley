@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import math
 import time
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from typing import Any
 import structlog
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
     UserStoppedSpeakingFrame,
     VADUserStoppedSpeakingFrame,
 )
@@ -79,6 +81,8 @@ class LatencyTracker(BaseObserver):
         super().__init__(observe_every_push=False, **kwargs)
         self._turns: list[TurnLatency] = []
         self._seen_frame_ids: set[int] = set()
+        self._in_respond_turn: bool = False
+        self.bot_stopped_speaking: asyncio.Event = asyncio.Event()
 
     @property
     def turns(self) -> list[TurnLatency]:
@@ -114,12 +118,31 @@ class LatencyTracker(BaseObserver):
         ):
             self._current_or_new_turn_for_user_stop(now)
         elif isinstance(frame, BotStartedSpeakingFrame):
-            if self._turns and self._turns[-1].first_audio_at is None:
+            self.bot_stopped_speaking.clear()
+            if (
+                self._in_respond_turn
+                and self._turns
+                and self._turns[-1].transcript_at is not None
+                and self._turns[-1].first_audio_at is None
+            ):
                 self._turns[-1].first_audio_at = now
                 logger.info("turn_latency", **self._turns[-1].as_dict())
+        elif isinstance(frame, BotStoppedSpeakingFrame):
+            self.bot_stopped_speaking.set()
+
+    def mark_turn_start(self) -> None:
+        self._in_respond_turn = True
+        self.bot_stopped_speaking.clear()
+
+    def mark_turn_end(self) -> None:
+        self._in_respond_turn = False
+
+    start_turn = mark_turn_start
+    end_turn = mark_turn_end
 
     def mark_transcript(self) -> None:
         now = time.perf_counter()
+        self._in_respond_turn = True
         if (
             self._turns
             and self._turns[-1].transcript_at is None
@@ -139,6 +162,7 @@ class LatencyTracker(BaseObserver):
             last.first_text_at = now
 
     def mark_interrupted(self) -> None:
+        self._in_respond_turn = False
         if self._turns:
             self._turns[-1].interrupted = True
 

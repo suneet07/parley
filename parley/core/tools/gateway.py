@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -23,7 +24,12 @@ logger = structlog.get_logger(__name__)
 GatewayStatus = Literal["ok", "error", "blocked", "confirmation_required"]
 
 _AFFIRMATIVE_RE = re.compile(
-    r"\b(?:yes|yeah|yep|yup|sure|correct|right|ok|okay|confirm|confirmed|"
+    r"\b(?:yes|yeah|yep|yup|sure|correct|right|(?:ok|okay)(?!\s+so\b)|confirm|confirmed|"
+    r"go\s+ahead|please\s+do|do\s+it|haan|haa|ji|theek\s+hai)\b",
+    re.IGNORECASE,
+)
+_LEADING_AFFIRMATIVE_RE = re.compile(
+    r"^\s*(?:yes|yeah|yep|yup|sure|correct|right|(?:ok|okay)(?!\s+so\b)|confirm|confirmed|"
     r"go\s+ahead|please\s+do|do\s+it|haan|haa|ji|theek\s+hai)\b",
     re.IGNORECASE,
 )
@@ -31,6 +37,16 @@ _NEGATIVE_RE = re.compile(
     r"\b(?:no|nope|not|don't|dont|do\s+not|cancel|stop|wait|hold\s+on|wrong|never|nahi|mat)\b",
     re.IGNORECASE,
 )
+
+
+def _is_affirmative_confirmation(utterance: str) -> bool:
+    if _NEGATIVE_RE.search(utterance) is not None:
+        return False
+    if _AFFIRMATIVE_RE.search(utterance) is None:
+        return False
+    words = utterance.split()
+    starts_with_affirmative = _LEADING_AFFIRMATIVE_RE.search(utterance) is not None
+    return len(words) < 12 or starts_with_affirmative
 
 
 class _ConfirmActionArgs(BaseModel):
@@ -129,6 +145,28 @@ class ToolGateway:
     ) -> GatewayResult:
         args_dict = args.model_dump()
 
+        # Brute-force guard on verify_identity
+        if (
+            spec.kind == ToolKind.VERIFY or spec.name == "verify_identity"
+        ) and ctx.state.failure_counts.get("verify_identity", 0) >= 3:
+            lock_payload: dict[str, Any] = {
+                "error": "verification_locked",
+                "escalate": True,
+                "instruction": (
+                    "Apologize, say you can't verify the account over the phone right now, "
+                    "and offer a human or a ticket."
+                ),
+            }
+            return self._finish(
+                name=spec.name,
+                args=args_dict,
+                status="blocked",
+                payload=lock_payload,
+                reason="verification_locked",
+                ctx=ctx,
+                start_t=start_t,
+            )
+
         # Step 4: Policy check
         decision = await self.policy_engine.check(spec, args, ctx)
         if not decision.allowed:
@@ -169,6 +207,7 @@ class ToolGateway:
             pending = ctx.state.pending_action
             if pending is not None and pending.name == spec.name and pending.args == args_dict:
                 confirm_prompt = pending.confirm_prompt
+                pending.created_turn = ctx.state.turn_index
             else:
                 ctx.state.pending_action = ToolCall(
                     name=spec.name,
@@ -193,12 +232,75 @@ class ToolGateway:
                 start_t=start_t,
             )
 
-        # Step 6: Execute tool
+        # Step 6: Execute tool (shield WRITE tools against mid-flight barge-in cancellation)
+        if spec.kind == ToolKind.WRITE:
+            exec_task = asyncio.ensure_future(spec.fn(ctx, args))
+            cancelled = False
+            try:
+                result = await asyncio.shield(exec_task)
+            except asyncio.CancelledError:
+                cancelled = True
+                try:
+                    result = await exec_task
+                except Exception as exc:
+                    ctx.state.failure_counts[spec.name] = (
+                        ctx.state.failure_counts.get(spec.name, 0) + 1
+                    )
+                    err_payload: dict[str, Any] = {
+                        "error": "tool_failed",
+                        "detail": str(exc)[:200],
+                    }
+                    self._finish(
+                        name=spec.name,
+                        args=args_dict,
+                        status="error",
+                        payload=err_payload,
+                        reason="tool_failed",
+                        ctx=ctx,
+                        start_t=start_t,
+                    )
+                    raise asyncio.CancelledError() from None
+            except Exception as exc:
+                ctx.state.failure_counts[spec.name] = ctx.state.failure_counts.get(spec.name, 0) + 1
+                err_payload = {
+                    "error": "tool_failed",
+                    "detail": str(exc)[:200],
+                }
+                return self._finish(
+                    name=spec.name,
+                    args=args_dict,
+                    status="error",
+                    payload=err_payload,
+                    reason="tool_failed",
+                    ctx=ctx,
+                    start_t=start_t,
+                )
+
+            status: GatewayStatus = "ok" if result.ok else "error"
+            res_payload: dict[str, Any] = {"ok": result.ok, **result.data}
+            if result.error is not None:
+                res_payload["error"] = result.error
+            if not result.ok:
+                ctx.state.failure_counts[spec.name] = ctx.state.failure_counts.get(spec.name, 0) + 1
+            gw_result = self._finish(
+                name=spec.name,
+                args=args_dict,
+                status=status,
+                payload=res_payload,
+                reason=result.error if not result.ok else None,
+                control=result.control,
+                ctx=ctx,
+                start_t=start_t,
+            )
+            if cancelled:
+                raise asyncio.CancelledError()
+            return gw_result
+
         try:
             result = await spec.fn(ctx, args)
         except Exception as exc:
             ctx.state.failure_counts[spec.name] = ctx.state.failure_counts.get(spec.name, 0) + 1
-            err_payload: dict[str, Any] = {
+            err_payload = {
                 "error": "tool_failed",
                 "detail": str(exc)[:200],
             }
@@ -223,8 +325,8 @@ class ToolGateway:
                 )
 
         # Step 8: Build result
-        status: GatewayStatus = "ok" if result.ok else "error"
-        res_payload: dict[str, Any] = {"ok": result.ok, **result.data}
+        status = "ok" if result.ok else "error"
+        res_payload = {"ok": result.ok, **result.data}
         if result.error is not None:
             res_payload["error"] = result.error
         if not result.ok:
@@ -291,7 +393,7 @@ class ToolGateway:
                 start_t=start_t,
             )
 
-        # 9a. Anti-self-confirmation turn index guard
+        # 9a. Anti-self-confirmation and stale-confirmation turn index guards
         if ctx.state.turn_index <= pending.created_turn:
             return self._finish(
                 name=self.CONFIRM_TOOL,
@@ -306,13 +408,25 @@ class ToolGateway:
                 start_t=start_t,
             )
 
+        if ctx.state.turn_index > pending.created_turn + 1:
+            ctx.state.pending_action = None
+            return self._finish(
+                name=self.CONFIRM_TOOL,
+                args=args_dict,
+                status="blocked",
+                payload={
+                    "error": "confirmation_expired",
+                    "instruction": "Read the action back again and ask the caller to confirm.",
+                },
+                reason="confirmation_expired",
+                ctx=ctx,
+                start_t=start_t,
+            )
+
         # 9b. Utterance affirmative/negative pattern guard when confirmed=True
         if confirm_args.confirmed:
             utterance = ctx.state.last_user_text()
-            if not (
-                _AFFIRMATIVE_RE.search(utterance) is not None
-                and _NEGATIVE_RE.search(utterance) is None
-            ):
+            if not _is_affirmative_confirmation(utterance):
                 return self._finish(
                     name=self.CONFIRM_TOOL,
                     args=args_dict,

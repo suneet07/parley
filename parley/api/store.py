@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import JSON, Boolean, Column, Float, MetaData, String, Table, select
@@ -62,7 +63,7 @@ class CallStore:
         if state.ended_at is not None and state.started_at is not None:
             duration_s = max(0.0, round((state.ended_at - state.started_at).total_seconds(), 3))
 
-        escalated = bool(state.disposition == "transferred" or state.escalation_reason)
+        escalated = bool(state.disposition == "escalated" or state.escalation_reason)
 
         values: dict[str, Any] = {
             "tenant_id": state.tenant_id,
@@ -167,6 +168,57 @@ class CallStore:
             "state": state_data,
             "metrics": row["metrics"],
         }
+
+    async def all_calls(self, tenant_id: str, since: datetime) -> list[dict[str, Any]]:
+        """Return full call records (including state and metrics) for a tenant since a datetime."""
+        stmt = (
+            select(calls_table)
+            .where(calls_table.c.tenant_id == tenant_id)
+            .order_by(calls_table.c.started_at.desc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).mappings().all()
+
+        results: list[dict[str, Any]] = []
+        since_dt = since if since.tzinfo is not None else since.replace(tzinfo=UTC)
+
+        for row in rows:
+            started_at_str = row["started_at"]
+            if started_at_str:
+                try:
+                    dt = datetime.fromisoformat(started_at_str)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=UTC)
+                    if dt < since_dt:
+                        continue
+                except Exception:
+                    if str(started_at_str) < since.isoformat():
+                        continue
+            elif since is not None:
+                continue
+
+            state_data = dict(row["state"]) if isinstance(row["state"], dict) else {}
+            results.append(
+                {
+                    **state_data,
+                    "id": row["id"],
+                    "call_id": row["id"],
+                    "tenant_id": row["tenant_id"],
+                    "started_at": row["started_at"],
+                    "ended_at": row["ended_at"],
+                    "direction": row["direction"],
+                    "channel": row["channel"],
+                    "caller_number": row["caller_number"],
+                    "disposition": row["disposition"],
+                    "summary": row["summary"],
+                    "intents": row["intents"] if row["intents"] is not None else [],
+                    "escalated": row["escalated"],
+                    "duration_s": row["duration_s"],
+                    "state": state_data,
+                    "metrics": row["metrics"],
+                }
+            )
+        return results
 
     async def close(self) -> None:
         """Dispose of the underlying SQLAlchemy async engine."""

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import secrets
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -61,6 +62,8 @@ class OpenAICompatLLM:
         self.model = model
         self.stream_usage = stream_usage
         self.timeout_s = timeout_s
+        self.on_first_chunk: Callable[[], None] | None = None
+        self.received_first_chunk: bool = False
         self._client = client or openai.AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
@@ -97,10 +100,19 @@ class OpenAICompatLLM:
         completion_tokens = 0
         finish_reason: str | None = None
         tool_acc: dict[int, dict[str, str]] = {}
+        first_chunk_seen = False
+        self.received_first_chunk = False
+        response: Any = None
 
         try:
             response = await self._client.chat.completions.create(**kwargs)
             async for chunk in response:
+                if not first_chunk_seen:
+                    first_chunk_seen = True
+                    self.received_first_chunk = True
+                    if self.on_first_chunk is not None:
+                        self.on_first_chunk()
+
                 choices = getattr(chunk, "choices", None)
                 if choices:
                     choice0 = choices[0]
@@ -150,6 +162,19 @@ class OpenAICompatLLM:
             raise LLMError(f"{self.name}: {exc}") from exc
         except Exception as exc:
             raise LLMError(f"{self.name}: {exc}") from exc
+        finally:
+            if response is not None:
+                close_fn = getattr(response, "close", None)
+                if callable(close_fn):
+                    res = close_fn()
+                    if inspect.isawaitable(res):
+                        await res
+                else:
+                    aclose_fn = getattr(response, "aclose", None)
+                    if callable(aclose_fn):
+                        res = aclose_fn()
+                        if inspect.isawaitable(res):
+                            await res
 
         if tool_acc:
             calls = [
@@ -209,7 +234,11 @@ class FallbackLLM:
         for idx, provider in enumerate(self.providers):
             if not self._is_breaker_open(idx, now):
                 return provider.model
-        return self.providers[0].model
+        soonest_idx = min(
+            range(len(self.providers)),
+            key=lambda i: self._opened_until.get(i, 0.0),
+        )
+        return self.providers[soonest_idx].model
 
     def _record_call(self, provider_name: str) -> None:
         self.health.calls += 1
@@ -238,12 +267,20 @@ class FallbackLLM:
         max_tokens: int = 400,
         tool_choice: str | dict[str, Any] | None = None,
     ) -> AsyncIterator[LLMEvent]:
-        """Stream from the first healthy provider; fall back only before the first event."""
+        """Stream from the first healthy provider; fall back only before the first chunk/event."""
         errors: list[str] = []
         now = time.monotonic()
 
+        all_open = all(self._is_breaker_open(i, now) for i in range(len(self.providers)))
+        soonest_idx: int | None = None
+        if all_open:
+            soonest_idx = min(
+                range(len(self.providers)),
+                key=lambda i: self._opened_until.get(i, 0.0),
+            )
+
         for idx, provider in enumerate(self.providers):
-            if self._is_breaker_open(idx, now):
+            if self._is_breaker_open(idx, now) and idx != soonest_idx:
                 errors.append(f"{provider.name}: circuit breaker open")
                 continue
 
@@ -257,7 +294,9 @@ class FallbackLLM:
             )
             try:
                 try:
-                    async with asyncio.timeout(self.first_token_timeout_s):
+                    async with asyncio.timeout(self.first_token_timeout_s) as cm:
+                        if hasattr(provider, "on_first_chunk"):
+                            provider.on_first_chunk = lambda _cm=cm: _cm.reschedule(None)  # type: ignore[misc]
                         first_event = await anext(agen)
                 except StopAsyncIteration:
                     self._record_success(idx)
@@ -277,6 +316,9 @@ class FallbackLLM:
                         error=err_msg,
                     )
                     continue
+                finally:
+                    if hasattr(provider, "on_first_chunk"):
+                        provider.on_first_chunk = None
 
                 # First event received — commit to this provider.
                 yield first_event

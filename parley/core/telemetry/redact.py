@@ -33,6 +33,21 @@ _PHONE_RE = re.compile(
     r"(?<![A-Za-z0-9₹-])(?:\+\d{1,3}[\s.-]?)?(?:\(\d{2,5}\)[\s.-]?|\d[\s.-]?){9,14}\d(?![A-Za-z0-9])"
 )
 
+_SKIP_KEYS: frozenset[str] = frozenset(
+    {
+        "call_id",
+        "tenant_id",
+        "direction",
+        "channel",
+        "disposition",
+        "role",
+        "status",
+        "at",
+        "started_at",
+        "ended_at",
+    }
+)
+
 
 def _luhn_valid(digits: list[int]) -> bool:
     if not (13 <= len(digits) <= 19) or sum(digits) == 0:
@@ -78,54 +93,31 @@ def redact(text: str) -> str:
     return out
 
 
-def _redact_obj(value: Any) -> Any:
+def _redact_obj(value: Any, *, parent_key: str | None = None) -> Any:
     if isinstance(value, str):
         return redact(value)
     if isinstance(value, dict):
-        return {k: _redact_obj(v) for k, v in value.items()}
+        is_tool_obj = "args" in value and (
+            "status" in value or "confirm_prompt" in value or "result" in value
+        )
+        out: dict[str, Any] = {}
+        for k, v in value.items():
+            if k in _SKIP_KEYS:
+                out[k] = v
+            elif k == "name" and is_tool_obj:
+                out[k] = v
+            elif k == "name" and parent_key == "caller" and isinstance(v, str):
+                first = v.strip().split()[0] if v.strip() else ""
+                out[k] = redact(first)
+            else:
+                out[k] = _redact_obj(v, parent_key=k)
+        return out
     if isinstance(value, list):
-        return [_redact_obj(item) for item in value]
+        return [_redact_obj(item, parent_key=parent_key) for item in value]
     return value
 
 
 def redact_state(state_dict: dict[str, Any]) -> dict[str, Any]:
-    """Deep-copy a CallState dict and redact strings in transcript text and tool event args/result."""
+    """Deep-copy a CallState dict and recursively redact every non-identifier string value."""
     data = copy.deepcopy(state_dict)
-
-    if isinstance(data.get("caller_number"), str):
-        data["caller_number"] = redact(data["caller_number"])
-
-    if isinstance(data.get("summary"), str):
-        data["summary"] = redact(data["summary"])
-
-    if isinstance(data.get("caller"), dict):
-        data["caller"] = _redact_obj(data["caller"])
-
-    if isinstance(data.get("slots"), dict):
-        data["slots"] = _redact_obj(data["slots"])
-
-    transcript = data.get("transcript")
-    if isinstance(transcript, list):
-        for turn in transcript:
-            if isinstance(turn, dict):
-                if isinstance(turn.get("text"), str):
-                    turn["text"] = redact(turn["text"])
-                turn_events = turn.get("tool_events")
-                if isinstance(turn_events, list):
-                    for ev in turn_events:
-                        if isinstance(ev, dict):
-                            if "args" in ev:
-                                ev["args"] = _redact_obj(ev["args"])
-                            if "result" in ev:
-                                ev["result"] = _redact_obj(ev["result"])
-
-    tool_events = data.get("tool_events")
-    if isinstance(tool_events, list):
-        for ev in tool_events:
-            if isinstance(ev, dict):
-                if "args" in ev:
-                    ev["args"] = _redact_obj(ev["args"])
-                if "result" in ev:
-                    ev["result"] = _redact_obj(ev["result"])
-
-    return data
+    return _redact_obj(data)
