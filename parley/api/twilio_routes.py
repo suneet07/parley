@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from urllib.parse import urlparse
 
@@ -20,7 +20,7 @@ from twilio.rest import Client as TwilioClient
 from twilio.twiml.voice_response import Connect, Dial, VoiceResponse
 
 from parley.config import BusinessConfig, Settings, get_settings, load_business
-from parley.core.outbound.models import Outcome
+from parley.core.outbound.models import Outcome, normalize_phone
 from parley.core.outbound.queue import OutboundQueue
 from parley.core.outbound.voicemail import voicemail_twiml
 from parley.core.outbound.worker import build_outbound_queue
@@ -110,9 +110,40 @@ async def twilio_voice_webhook(request: Request) -> Response:
     base_url = settings.public_base_url.rstrip("/")
     await _validate_twilio_signature(request, f"{base_url}/twilio/voice")
 
+    if settings.kill_switch:
+        vr_kill = VoiceResponse()
+        vr_kill.say("Sorry, this line is not available right now.")
+        vr_kill.hangup()
+        return Response(content=str(vr_kill), media_type="application/xml")
+
     form = await request.form()
     from_number = str(form.get("From", ""))
     call_sid = str(form.get("CallSid", ""))
+
+    if from_number and settings.caller_blocklist:
+        blocklist = {normalize_phone(p) for p in settings.caller_blocklist.split(",") if p.strip()}
+        if normalize_phone(from_number) in blocklist:
+            vr_block = VoiceResponse()
+            vr_block.say("Sorry, we are unable to take your call right now. Goodbye.")
+            vr_block.hangup()
+            return Response(content=str(vr_block), media_type="application/xml")
+
+    store = getattr(request.app.state, "store", None)
+    if store is not None and from_number and settings.max_calls_per_caller_per_day > 0:
+        await store.init()
+        since = datetime.now(UTC) - timedelta(hours=24)
+        recent_count = await store.count_calls_from(
+            settings.tenant_id,
+            from_number,
+            since,
+        )
+        if recent_count >= settings.max_calls_per_caller_per_day:
+            vr_cap = VoiceResponse()
+            vr_cap.say(
+                "Sorry, you have reached the maximum number of calls for today. Please try again tomorrow."
+            )
+            vr_cap.hangup()
+            return Response(content=str(vr_cap), media_type="application/xml")
 
     now = time.time()
     expired_keys = [k for k, v in STREAM_TOKENS.items() if float(v.get("expires", 0)) <= now]

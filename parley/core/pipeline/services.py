@@ -59,10 +59,15 @@ def build_stt(settings: Settings) -> FrameProcessor:
         raise RuntimeError("No STT provider configured: set DEEPGRAM_API_KEY or GROQ_API_KEY.")
 
     logger.info("stt_configured", providers=active_names)
-    if len(services) == 1:
-        return services[0]
-    # ServiceSwitcher with ServiceSwitcherStrategyFailover switches automatically on provider error.
-    return ServiceSwitcher(services=services, strategy_type=ServiceSwitcherStrategyFailover)
+    primary_provider = active_names[0].split(":", 1)[0]
+    processor: FrameProcessor = (
+        services[0]
+        if len(services) == 1
+        else ServiceSwitcher(services=services, strategy_type=ServiceSwitcherStrategyFailover)
+    )
+    processor.provider_name = primary_provider  # type: ignore[attr-defined]
+    processor.primary_provider = primary_provider  # type: ignore[attr-defined]
+    return processor
 
 
 def build_tts(settings: Settings, business: BusinessConfig) -> FrameProcessor:
@@ -121,6 +126,12 @@ def build_tts(settings: Settings, business: BusinessConfig) -> FrameProcessor:
         )
 
     logger.info("tts_configured", providers=active_names)
-    if len(services) == 1:
-        return services[0]
-    return ServiceSwitcher(services=services, strategy_type=ServiceSwitcherStrategyFailover)
+    primary_provider = active_names[0].split(":", 1)[0]
+    processor: FrameProcessor = (
+        services[0]
+        if len(services) == 1
+        else ServiceSwitcher(services=services, strategy_type=ServiceSwitcherStrategyFailover)
+    )
+    processor.provider_name = primary_provider  # type: ignore[attr-defined]
+    processor.primary_provider = primary_provider  # type: ignore[attr-defined]
+    return processor

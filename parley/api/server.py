@@ -6,15 +6,17 @@ from typing import Any
 
 import structlog
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from parley.api import dashboard_routes, outbound_routes, twilio_routes, webrtc_routes
+from parley.api import dashboard_routes, live, outbound_routes, twilio_routes, webrtc_routes
+from parley.api.auth import require_api_key
 from parley.api.store import CallStore
 from parley.config import get_settings, load_business
 from parley.core.outbound.queue import OutboundQueue
 from parley.core.outbound.store import OutboundStore
 from parley.core.outbound.worker import build_outbound_queue
+from parley.core.telemetry.tracing import setup as setup_tracing
 
 try:
     from parley.core.brain import Agent
@@ -42,6 +44,7 @@ def create_app(
         business = getattr(app.state, "business", None) or load_business(settings.business_config)
         app.state.settings = settings
         app.state.business = business
+        setup_tracing(settings)
 
         if getattr(app.state, "agent", None) is None:
             from parley.core.brain import Agent as BrainAgent
@@ -117,7 +120,7 @@ def create_app(
         business = getattr(request.app.state, "business", initial_business)
         return {"ok": True, "business": business.business}
 
-    @app.get("/api/calls")
+    @app.get("/api/calls", dependencies=[Depends(require_api_key)])
     async def list_calls(
         request: Request,
         limit: int = Query(default=50, ge=1, le=500),
@@ -132,7 +135,7 @@ def create_app(
             offset=offset,
         )
 
-    @app.get("/api/calls/{call_id}")
+    @app.get("/api/calls/{call_id}", dependencies=[Depends(require_api_key)])
     async def get_call(call_id: str, request: Request) -> dict[str, Any]:
         settings = getattr(request.app.state, "settings", initial_settings)
         call_store: CallStore = request.app.state.store
@@ -146,6 +149,7 @@ def create_app(
     app.include_router(webrtc_routes.router)
     app.include_router(dashboard_routes.router)
     app.include_router(outbound_routes.router)
+    app.include_router(live.router)
     webrtc_routes.mount_webrtc_ui(app)
 
     return app

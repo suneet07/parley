@@ -45,6 +45,7 @@ class ScenarioResult:
     judge: dict[str, Any]
     duration_s: float
     error: str | None = None
+    cost_usd: float | None = None
 
 
 def _normalize_phone_digits(phone: str) -> str:

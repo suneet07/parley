@@ -1,11 +1,21 @@
 "use client";
 
-import { Activity, Gauge, LayoutDashboard, Lightbulb, PhoneCall, Settings2, FlaskConical } from "lucide-react";
+import {
+  Activity,
+  FlaskConical,
+  Gauge,
+  LayoutDashboard,
+  Lightbulb,
+  PhoneCall,
+  Radio,
+  Settings2,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/live", label: "Live", icon: Radio },
   { href: "/calls", label: "Calls", icon: PhoneCall },
   { href: "/insights", label: "Insights", icon: Lightbulb },
   { href: "/latency", label: "Latency", icon: Gauge },

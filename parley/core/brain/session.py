@@ -18,7 +18,7 @@ from parley.core.brain.prompts import build_turn_context
 from parley.core.brain.state import CallState, Disposition, ToolEvent, Turn, utcnow
 from parley.core.knowledge.ingest import build_retriever
 from parley.core.providers.llm import build_llm_chain
-from parley.core.providers.llm_base import LLM, ChatMessage, TextDelta, Usage
+from parley.core.providers.llm_base import LLM, ChatMessage, Done, TextDelta, Usage
 from parley.core.tools.base import ToolContext, ToolKind
 from parley.core.tools.gateway import ToolGateway
 from parley.core.tools.registry import ToolRegistry
@@ -164,6 +164,7 @@ class CallSession:
         self._turn_filler: str = ""
         self._turn_text_parts: list[str] = []
         self._turn_usages: list[Usage] = []
+        self.usage: list[Usage] = []
         self._turn_control: Control | None = None
         self._knowledge_gaps: list[str] = []
         self._answered_faq = False
@@ -470,6 +471,8 @@ class CallSession:
                 async for ev in agen:
                     if isinstance(ev, TextDelta):
                         raw_chunks.append(ev.text)
+                    elif isinstance(ev, Done):
+                        self.usage.append(ev.usage)
             finally:
                 await agen.aclose()
 

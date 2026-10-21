@@ -28,11 +28,14 @@ from pipecat.processors.aggregators.llm_response_universal import (
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.transports.base_transport import BaseTransport
 
+from parley.api.live import live_calls
 from parley.config import BusinessConfig, Settings, get_settings, load_business
 from parley.core.brain.state import CallState
 from parley.core.pipeline.brain_processor import BrainProcessor, Control
 from parley.core.pipeline.latency import LatencyTracker
 from parley.core.pipeline.services import build_stt, build_tts
+from parley.core.telemetry.cost import estimate_call_cost
+from parley.core.telemetry.tracing import setup as setup_tracing
 
 if TYPE_CHECKING:
     from parley.api.store import CallStore
@@ -84,9 +87,18 @@ async def run_call(
         caller_number=caller_number or "",
         outbound_goal=outbound_goal,
     )
+    live_calls.register(session, channel, control)
+    tracing_enabled = setup_tracing(settings)
 
-    stt = build_stt(settings)
-    tts = build_tts(settings, business)
+    try:
+        stt = build_stt(settings)
+        tts = build_tts(settings, business)
+    except Exception:
+        live_calls.unregister(call_id)
+        raise
+
+    stt_provider = str(getattr(stt, "provider_name", "deepgram"))
+    tts_provider = str(getattr(tts, "provider_name", business.voice.provider))
 
     context = LLMContext()
     # In Pipecat 1.13, VAD lives on LLMUserAggregatorParams (not TransportParams),
@@ -161,6 +173,8 @@ async def run_call(
         params=PipelineParams(**params_kwargs),
         observers=[latency],
         idle_timeout_secs=business.max_call_seconds + 30,
+        enable_tracing=tracing_enabled,
+        conversation_id=call_id,
     )
     task_ref["task"] = task
 
@@ -218,6 +232,7 @@ async def run_call(
     except Exception:
         logger.exception("pipeline_runner_error", call_id=call_id)
     finally:
+        live_calls.unregister(call_id)
         watchdog_task.cancel()
         try:
             await watchdog_task
@@ -226,7 +241,17 @@ async def run_call(
 
         # Wrap-up runs in its own task: if this coroutine is being cancelled (hangup, server
         # shutdown), awaits here would be cancelled too and the call would never be stored.
-        wrap_up = asyncio.ensure_future(_wrap_up(session, latency, store, call_id, end_reason))
+        wrap_up = asyncio.ensure_future(
+            _wrap_up(
+                session,
+                latency,
+                store,
+                call_id,
+                end_reason,
+                stt_provider=stt_provider,
+                tts_provider=tts_provider,
+            )
+        )
         _WRAP_UPS.add(wrap_up)
         wrap_up.add_done_callback(_WRAP_UPS.discard)
 
@@ -237,7 +262,14 @@ _WRAP_UPS: set[asyncio.Future] = set()
 
 
 async def _wrap_up(
-    session: Any, latency: Any, store: Any, call_id: str, end_reason: str
+    session: Any,
+    latency: Any,
+    store: Any,
+    call_id: str,
+    end_reason: str,
+    *,
+    stt_provider: str = "deepgram",
+    tts_provider: str = "elevenlabs",
 ) -> CallState:
     state: CallState = session.state
     try:
@@ -246,6 +278,14 @@ async def _wrap_up(
         logger.exception("session_end_error", call_id=call_id)
 
     metrics = latency.summary()
+    session_usage = getattr(session, "usage", None) or []
+    cost = estimate_call_cost(
+        state,
+        llm_usage=[(u.provider, u.prompt_tokens, u.completion_tokens) for u in session_usage],
+        stt_provider=stt_provider,
+        tts_provider=tts_provider,
+    )
+    metrics["cost"] = cost.as_dict()
     if store is not None:
         try:
             await store.save(state, metrics)

@@ -119,6 +119,9 @@ async def process_job(ctx: dict[str, Any], job_id: str) -> CallJob:
 
 
 async def sweep_due(ctx: dict[str, Any]) -> int:
+    settings: Settings | None = ctx.get("settings")
+    if settings is not None and settings.kill_switch:
+        return 0
     store: OutboundStore = ctx["store"]
     now = datetime.now(UTC)
     due = await store.due_jobs(now)

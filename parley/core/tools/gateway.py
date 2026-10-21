@@ -16,6 +16,11 @@ from parley.core.brain.state import ToolCall, ToolEvent
 from parley.core.tools.base import ToolContext, ToolKind, ToolSpec
 from parley.core.tools.policy_engine import PolicyEngine
 
+try:
+    from opentelemetry import trace as _otel_trace
+except ImportError:  # pragma: no cover
+    _otel_trace = None  # type: ignore[assignment]
+
 if TYPE_CHECKING:
     from parley.core.tools.registry import ToolRegistry
 
@@ -476,6 +481,24 @@ class ToolGateway:
         )
 
     async def call(
+        self,
+        name: str,
+        raw_args: str | dict[str, Any],
+        ctx: ToolContext,
+    ) -> GatewayResult:
+        if _otel_trace is None:
+            return await self._call_inner(name, raw_args, ctx)
+
+        tracer = _otel_trace.get_tracer("parley.tools")
+        with tracer.start_as_current_span(f"tool.{name}") as span:
+            result = await self._call_inner(name, raw_args, ctx)
+            span.set_attribute("status", result.status)
+            span.set_attribute("latency", result.event.latency_ms)
+            span.set_attribute("latency_ms", result.event.latency_ms)
+            span.set_attribute("turn", result.event.turn)
+            return result
+
+    async def _call_inner(
         self,
         name: str,
         raw_args: str | dict[str, Any],

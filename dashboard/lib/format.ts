@@ -5,6 +5,16 @@ export function fmtMs(n: number | null | undefined): string {
   return `${Math.round(n)} ms`;
 }
 
+export function fmtUsd(n: number | null | undefined, decimals?: number): string {
+  if (n === null || n === undefined || isNaN(n)) {
+    return "—";
+  }
+  if (decimals !== undefined) {
+    return `$${n.toFixed(decimals)}`;
+  }
+  return `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
+}
+
 export function fmtPct(r: number | null | undefined): string {
   if (r === null || r === undefined || isNaN(r)) {
     return "—";

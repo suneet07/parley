@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { CallDetail, CallRow, ConfigView, EvalReport, Metrics } from "./types";
+import type { CallDetail, CallRow, ConfigView, EvalReport, LiveCall, Metrics } from "./types";
 
 export async function fetcher<T>(url: string): Promise<T | null> {
   const res = await fetch(url);
@@ -30,4 +30,10 @@ export function useEval(suite = "smoke") {
 
 export function useConfig() {
   return useSWR<ConfigView | null>("/api/config", fetcher);
+}
+
+export function useLiveCalls() {
+  return useSWR<LiveCall[] | null>("/api/live", fetcher, {
+    refreshInterval: 2000,
+  });
 }

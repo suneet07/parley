@@ -138,7 +138,7 @@ async def test_dashboard_api(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
 
     app = create_app(agent=DummyAgent(), store=store)  # type: ignore[arg-type]
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         # 1. /api/metrics verification
         metrics_resp = client.get("/api/metrics?days=7")
         assert metrics_resp.status_code == 200

@@ -22,6 +22,7 @@ from parley.config import BusinessConfig, Settings, get_settings, load_business
 from parley.core.brain.state import CallState, Turn
 from parley.core.knowledge.ingest import build_retriever
 from parley.core.providers.llm_base import LLM, ChatMessage, TextDelta
+from parley.core.telemetry.cost import estimate_call_cost
 
 try:
     from parley.core.brain import Agent, CallSession
@@ -158,6 +159,18 @@ async def run_scenario(
                         break
 
                 state = await session.end()
+                session_usage = list(getattr(session, "usage", None) or [])
+                call_cost = (
+                    estimate_call_cost(
+                        state,
+                        llm_usage=[
+                            (u.provider, u.prompt_tokens, u.completion_tokens)
+                            for u in session_usage
+                        ],
+                    )
+                    if session_usage
+                    else None
+                )
 
                 docs_texts: list[str] = []
                 for rel_k in biz.knowledge:
@@ -239,6 +252,7 @@ async def run_scenario(
                     judge=judge_dict,
                     duration_s=round(time.monotonic() - t0, 2),
                     error=None,
+                    cost_usd=call_cost.total_usd if call_cost is not None else None,
                 )
     except TimeoutError:
         return ScenarioResult(

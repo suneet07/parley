@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -113,6 +113,30 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = ""
 
     tenant_id: str = "default"
+    api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("api_key", "PARLEY_API_KEY", "API_KEY"),
+    )
+    kill_switch: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("kill_switch", "PARLEY_KILL_SWITCH", "KILL_SWITCH"),
+    )
+    max_calls_per_caller_per_day: int = Field(
+        default=5,
+        validation_alias=AliasChoices(
+            "max_calls_per_caller_per_day",
+            "PARLEY_MAX_CALLS_PER_CALLER_PER_DAY",
+            "MAX_CALLS_PER_CALLER_PER_DAY",
+        ),
+    )
+    caller_blocklist: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "caller_blocklist",
+            "PARLEY_CALLER_BLOCKLIST",
+            "CALLER_BLOCKLIST",
+        ),
+    )
 
     compliance_region: str = "in"
     outbound_webhook_secret: str = ""

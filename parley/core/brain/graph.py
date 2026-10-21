@@ -122,6 +122,8 @@ async def _llm_node(state: TurnGraphState) -> dict[str, Any]:
                 node_tool_calls = list(ev.calls)
             elif isinstance(ev, Done):
                 session._turn_usages.append(ev.usage)
+                if hasattr(session, "usage") and isinstance(session.usage, list):
+                    session.usage.append(ev.usage)
 
         node_text = "".join(node_text_parts)
         if node_text or node_tool_calls:

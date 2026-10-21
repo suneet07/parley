@@ -17,6 +17,7 @@ from pipecat.transports.smallwebrtc.request_handler import (
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat_ai_prebuilt.frontend import PipecatPrebuiltUI
 
+from parley.config import get_settings
 from parley.core.pipeline.bot import run_call
 
 logger = structlog.get_logger(__name__)
@@ -41,6 +42,13 @@ async def root_redirect() -> RedirectResponse:
 @router.post("/api/offer")
 async def offer(offer_request: SmallWebRTCRequest, request: Request) -> dict[str, Any]:
     """Handle WebRTC SDP offer and spawn a background voice call pipeline."""
+    settings = getattr(request.app.state, "settings", None) or get_settings()
+    if settings.kill_switch:
+        raise HTTPException(
+            status_code=503,
+            detail="Service unavailable right now.",
+        )
+
     if len(active_webrtc_tasks) >= MAX_CONCURRENT_WEBRTC_CALLS:
         raise HTTPException(
             status_code=429,

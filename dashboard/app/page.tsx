@@ -4,7 +4,7 @@ import { CallsTable } from "@/components/CallsTable";
 import { ErrorBox, Loading } from "@/components/States";
 import { StatCard } from "@/components/StatCard";
 import { useCalls, useMetrics } from "@/lib/api";
-import { fmtMs, fmtPct } from "@/lib/format";
+import { fmtMs, fmtPct, fmtUsd } from "@/lib/format";
 
 export default function OverviewPage() {
   const { data: metrics, error: metricsError, isLoading: metricsLoading } = useMetrics(7);
@@ -46,6 +46,10 @@ export default function OverviewPage() {
           value={fmtMs(p95 ?? null)}
           note="target < 1500 ms"
           noteTone={p95Tone}
+        />
+        <StatCard
+          label="Cost per call"
+          value={fmtUsd(metrics?.calls ? metrics.cost?.per_call_avg_usd : null)}
         />
       </div>
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any
 
@@ -7,6 +8,7 @@ from sqlalchemy import JSON, Boolean, Column, Float, MetaData, String, Table, se
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from parley.core.brain.state import CallState
+from parley.core.outbound.models import normalize_phone
 from parley.core.telemetry.redact import redact, redact_state
 
 _metadata = MetaData()
@@ -21,6 +23,7 @@ calls_table = Table(
     Column("direction", String, nullable=False),
     Column("channel", String, nullable=False),
     Column("caller_number", String, nullable=True),
+    Column("caller_hash", String, index=True, nullable=True),
     Column("disposition", String, nullable=True),
     Column("summary", String, nullable=True),
     Column("intents", JSON, nullable=False),
@@ -29,6 +32,15 @@ calls_table = Table(
     Column("state", JSON, nullable=False),
     Column("metrics", JSON, nullable=True),
 )
+
+
+def _caller_hash(tenant_id: str, caller_number: str | None) -> str | None:
+    if not caller_number:
+        return None
+    norm = normalize_phone(caller_number)
+    if not norm:
+        return None
+    return hashlib.sha256(f"{tenant_id}{norm}".encode()).hexdigest()
 
 
 def _redact_caller_number(caller_number: str | None) -> str:
@@ -72,6 +84,7 @@ class CallStore:
             "direction": state.direction,
             "channel": state.channel,
             "caller_number": masked_caller,
+            "caller_hash": _caller_hash(state.tenant_id, state.caller_number),
             "disposition": redacted_dict.get("disposition"),
             "summary": redacted_dict.get("summary"),
             "intents": redacted_dict.get("intents") or [],
@@ -219,6 +232,39 @@ class CallStore:
                 }
             )
         return results
+
+    async def count_calls_from(
+        self,
+        tenant_id: str,
+        caller_number: str,
+        since: datetime,
+    ) -> int:
+        """Count calls from a caller_number (by caller_hash) since a given datetime."""
+        chash = _caller_hash(tenant_id, caller_number)
+        if not chash:
+            return 0
+        stmt = select(calls_table.c.started_at).where(
+            calls_table.c.tenant_id == tenant_id,
+            calls_table.c.caller_hash == chash,
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).all()
+
+        since_dt = since if since.tzinfo is not None else since.replace(tzinfo=UTC)
+        count = 0
+        for (started_at_str,) in rows:
+            if not started_at_str:
+                continue
+            try:
+                dt = datetime.fromisoformat(started_at_str)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=UTC)
+                if dt >= since_dt:
+                    count += 1
+            except Exception:
+                if str(started_at_str) >= since_dt.isoformat():
+                    count += 1
+        return count
 
     async def close(self) -> None:
         """Dispose of the underlying SQLAlchemy async engine."""

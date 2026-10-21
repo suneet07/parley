@@ -86,6 +86,8 @@ class OutboundQueue:
     async def process(self, job_id: str, now: datetime) -> CallJob:
         now_utc = _ensure_utc(now)
         job = await self._load_job(job_id)
+        if getattr(self.settings, "kill_switch", False):
+            return job
         if job.status not in ("queued", "retry_scheduled"):
             return job
 

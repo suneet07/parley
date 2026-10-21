@@ -116,7 +116,7 @@ async def test_store_save_list_get_roundtrip_redacts_card(tmp_path: Path) -> Non
 
     # Also verify via FastAPI /api/calls and /api/calls/{call_id}
     app = create_app(agent=DummyAgent(), store=store)  # type: ignore[arg-type]
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         list_resp = client.get("/api/calls")
         assert list_resp.status_code == 200
         assert len(list_resp.json()) == 1

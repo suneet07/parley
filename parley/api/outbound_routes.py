@@ -11,10 +11,11 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from parley.api.auth import require_api_key
 from parley.config import Settings, get_settings
 from parley.core.outbound.models import CallJob, Contact, normalize_phone
 from parley.core.outbound.queue import OutboundQueue
@@ -217,7 +218,7 @@ async def upload_campaign_csv(
     }
 
 
-@router.get("/jobs/{job_id}")
+@router.get("/jobs/{job_id}", dependencies=[Depends(require_api_key)])
 async def get_outbound_job(job_id: str, request: Request) -> dict[str, Any]:
     queue, settings, _ = await _get_queue_and_settings(request)
     job = await queue.store.get_job(settings.tenant_id, job_id)
@@ -228,7 +229,7 @@ async def get_outbound_job(job_id: str, request: Request) -> dict[str, Any]:
     return job.model_dump(mode="json")
 
 
-@router.get("/audit")
+@router.get("/audit", dependencies=[Depends(require_api_key)])
 async def get_outbound_audit(
     request: Request,
     limit: int = Query(default=100, ge=1, le=1000),

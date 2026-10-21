@@ -111,6 +111,10 @@ def write_report(
 
     passed_count = sum(1 for r in results if r.passed)
     total_count = len(results)
+    costs = [r.cost_usd for r in results if getattr(r, "cost_usd", None) is not None]
+    cost_per_call_usd: float | None = (
+        round(sum(c for c in costs if c is not None) / len(costs), 5) if costs else None
+    )
 
     # 2. Categories breakdown
     cat_order: list[str] = []
@@ -176,6 +180,7 @@ def write_report(
             "hallucinations_per_100": hallucinations_per_100,
             "passed": passed_count,
             "total": total_count,
+            "cost_per_call_usd": cost_per_call_usd,
         },
         "categories": categories,
         "regressions": regressions,

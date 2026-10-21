@@ -7,7 +7,7 @@ import { LatencyRow } from "@/components/LatencyRow";
 import { Empty, ErrorBox, Loading } from "@/components/States";
 import { Transcript } from "@/components/Transcript";
 import { useCall } from "@/lib/api";
-import { dispositionTone, fmtDuration, fmtMs, fmtTime } from "@/lib/format";
+import { dispositionTone, fmtDuration, fmtMs, fmtTime, fmtUsd } from "@/lib/format";
 
 export default function CallDetailPage() {
   const params = useParams();
@@ -81,6 +81,14 @@ export default function CallDetailPage() {
 
               <dt className="dim">Duration</dt>
               <dd className="num">{fmtDuration(call.duration_s)}</dd>
+
+              {call.metrics?.cost?.total_usd !== undefined &&
+              call.metrics?.cost?.total_usd !== null ? (
+                <>
+                  <dt className="dim">Cost</dt>
+                  <dd className="num">{fmtUsd(call.metrics.cost.total_usd, 4)}</dd>
+                </>
+              ) : null}
 
               {call.state.escalation_reason ? (
                 <>

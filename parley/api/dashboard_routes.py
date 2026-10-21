@@ -7,13 +7,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from parley.api.auth import require_api_key
 from parley.api.store import CallStore
 from parley.config import get_settings, load_business
 from parley.core.tools.registry import ToolRegistry
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/api", dependencies=[Depends(require_api_key)])
 
 RESOLVED_DISPOSITIONS = frozenset({"resolved", "ticket_created", "callback_booked"})
 _SUITE_PATTERN = re.compile(r"^[a-z0-9-]+$")
@@ -184,6 +185,31 @@ async def get_metrics(
 
     by_day = sorted(by_day_map.values(), key=lambda item: item["date"])
 
+    cost_totals: list[float] = []
+    cost_minutes: list[float] = []
+    for call in calls:
+        metrics = call.get("metrics") or {}
+        cost_obj = metrics.get("cost")
+        if isinstance(cost_obj, dict) and cost_obj.get("total_usd") is not None:
+            cost_totals.append(float(cost_obj["total_usd"]))
+            mins = cost_obj.get("minutes")
+            if mins is not None:
+                cost_minutes.append(float(mins))
+            else:
+                cost_minutes.append(float(call.get("duration_s") or 0.0) / 60.0)
+
+    if cost_totals:
+        total_usd: float | None = round(sum(cost_totals), 5)
+        per_call_avg_usd: float | None = round(total_usd / len(cost_totals), 5)
+        total_mins = sum(cost_minutes)
+        per_5min_usd: float | None = (
+            round((total_usd / total_mins) * 5.0, 5) if total_mins > 0 else None
+        )
+    else:
+        total_usd = None
+        per_call_avg_usd = None
+        per_5min_usd = None
+
     return {
         "days": days,
         "calls": total_calls,
@@ -195,6 +221,11 @@ async def get_metrics(
         "p50_e2e_ms": p50_e2e_ms,
         "p95_e2e_ms": p95_e2e_ms,
         "stage_avg_ms": stage_avg_ms,
+        "cost": {
+            "total_usd": total_usd,
+            "per_call_avg_usd": per_call_avg_usd,
+            "per_5min_usd": per_5min_usd,
+        },
         "intents": intents,
         "dispositions": dispositions,
         "knowledge_gaps": knowledge_gaps,

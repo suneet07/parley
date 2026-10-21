@@ -102,6 +102,7 @@ class BrainProcessor(FrameProcessor):
         self._session = session
         self._on_control = on_control
         self._latency = latency
+        self.usage: list[Any] = []
 
     async def _consume_brain_stream(
         self,
@@ -161,6 +162,13 @@ class BrainProcessor(FrameProcessor):
                             status=getattr(ev.event, "status", None),
                         )
                     elif isinstance(ev, TurnDone):
+                        if ev.usage:
+                            self.usage.extend(ev.usage)
+                            session_usage = getattr(self._session, "usage", None)
+                            if isinstance(session_usage, list):
+                                for u in ev.usage:
+                                    if u not in session_usage:
+                                        session_usage.append(u)
                         if started_response and not ended_response:
                             ended_response = True
                             await self.push_frame(LLMFullResponseEndFrame())

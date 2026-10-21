@@ -56,7 +56,26 @@ export type CallDetail = CallRow & {
     p50_e2e_ms: number | null;
     p95_e2e_ms: number | null;
     count: number;
+    cost?: {
+      total_usd: number;
+      stt_usd?: number;
+      llm_usd?: number;
+      tts_usd?: number;
+      phone_usd?: number;
+      minutes?: number;
+    } | null;
   } | null;
+};
+
+export type LiveCall = {
+  call_id: string;
+  channel: "phone" | "webrtc" | "text";
+  direction: "inbound" | "outbound";
+  started_at: string;
+  intent: string | null;
+  verified: boolean;
+  transcript: Turn[];
+  disposition: string;
 };
 
 export type Metrics = {
@@ -73,6 +92,11 @@ export type Metrics = {
     stt: number | null;
     llm: number | null;
     tts: number | null;
+  };
+  cost: {
+    total_usd: number | null;
+    per_call_avg_usd: number | null;
+    per_5min_usd: number | null;
   };
   intents: { name: string; count: number }[];
   dispositions: { name: string; count: number }[];
@@ -100,6 +124,7 @@ export type EvalReport = {
     hallucinations_per_100: number | null;
     passed: number;
     total: number;
+    cost_per_call_usd?: number | null;
   };
   categories: { name: string; passed: number; total: number }[];
   regressions: string[];

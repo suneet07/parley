@@ -481,7 +481,7 @@ async def test_api_outbound_trigger_and_twiml_routes(
     }
     raw_body = json.dumps(payload).encode("utf-8")
 
-    with TestClient(app) as client:
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
         # 1. Missing secret -> 503
         r_503 = client.post(
             "/api/outbound/trigger",
