@@ -114,6 +114,14 @@ class Settings(BaseSettings):
 
     tenant_id: str = "default"
 
+    compliance_region: str = "in"
+    outbound_webhook_secret: str = ""
+    outbound_max_concurrent: int = 3
+    outbound_daily_cap_per_number: int = 200
+    outbound_daily_cap_per_contact: int = 2
+    outbound_max_attempts: int = 3
+    outbound_sms_fallback: bool = True
+
 
 def get_settings() -> Settings:
     return Settings()

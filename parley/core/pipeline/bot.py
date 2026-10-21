@@ -224,17 +224,31 @@ async def run_call(
         except asyncio.CancelledError:
             pass
 
-        state: CallState = session.state
+        # Wrap-up runs in its own task: if this coroutine is being cancelled (hangup, server
+        # shutdown), awaits here would be cancelled too and the call would never be stored.
+        wrap_up = asyncio.ensure_future(_wrap_up(session, latency, store, call_id, end_reason))
+        _WRAP_UPS.add(wrap_up)
+        wrap_up.add_done_callback(_WRAP_UPS.discard)
+
+    return await asyncio.shield(wrap_up)
+
+
+_WRAP_UPS: set[asyncio.Future] = set()
+
+
+async def _wrap_up(
+    session: Any, latency: Any, store: Any, call_id: str, end_reason: str
+) -> CallState:
+    state: CallState = session.state
+    try:
+        state = await session.end(reason=end_reason)
+    except Exception:
+        logger.exception("session_end_error", call_id=call_id)
+
+    metrics = latency.summary()
+    if store is not None:
         try:
-            state = await session.end(reason=end_reason)
+            await store.save(state, metrics)
         except Exception:
-            logger.exception("session_end_error", call_id=call_id)
-
-        metrics = latency.summary()
-        if store is not None:
-            try:
-                await store.save(state, metrics)
-            except Exception:
-                logger.exception("store_save_error", call_id=call_id)
-
+            logger.exception("store_save_error", call_id=call_id)
     return state

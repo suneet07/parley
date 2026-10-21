@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 ALWAYS_ON_BUILTINS: frozenset[str] = frozenset(
-    {"search_kb", "transfer_to_human", "end_call", "create_ticket"}
+    {"search_kb", "transfer_to_human", "end_call", "create_ticket", "opt_out"}
 )
 
 

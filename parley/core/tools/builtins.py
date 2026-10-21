@@ -78,6 +78,13 @@ class EndCallArgs(BaseModel):
     reason: str = Field(description="Reason for ending the call")
 
 
+class OptOutArgs(BaseModel):
+    reason: str = Field(
+        default="caller_requested",
+        description="Reason the person asked not to be called again",
+    )
+
+
 @tool(kind=ToolKind.READ)
 async def search_kb(ctx: ToolContext, args: SearchKbArgs) -> ToolResult:
     """Search the business knowledge base for policies, FAQs, product info, and shipping details."""
@@ -184,5 +191,36 @@ async def end_call(ctx: ToolContext, args: EndCallArgs) -> ToolResult:
     return ToolResult(ok=True, control="end_call", data={"ending": True})
 
 
-_BUILTIN_NAMES = {"search_kb", "create_ticket", "book_callback", "transfer_to_human", "end_call"}
+@tool(kind=ToolKind.ACTION, requires_confirmation=False)
+async def opt_out(ctx: ToolContext, args: OptOutArgs) -> ToolResult:
+    """Use when the person asks not to be called again."""
+    outbound_store = ctx.resources.get("outbound_store")
+    caller_number = ctx.state.caller_number or (
+        ctx.state.caller.phone if ctx.state.caller else None
+    )
+    if outbound_store is not None and caller_number:
+        await outbound_store.add_dnc(
+            ctx.state.tenant_id,
+            caller_number,
+            source=f"opt_out:{args.reason}",
+        )
+    else:
+        logger.info(
+            "opt_out_without_outbound_store",
+            caller_number=caller_number,
+            reason=args.reason,
+            call_id=ctx.state.call_id,
+        )
+    ctx.state.disposition = "do_not_call"
+    return ToolResult(ok=True, control="end_call", data={"opted_out": True})
+
+
+_BUILTIN_NAMES = {
+    "search_kb",
+    "create_ticket",
+    "book_callback",
+    "transfer_to_human",
+    "end_call",
+    "opt_out",
+}
 BUILTIN_TOOLS: list[ToolSpec] = [spec for spec in _COLLECTED_TOOLS if spec.name in _BUILTIN_NAMES]

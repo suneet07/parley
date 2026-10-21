@@ -9,9 +9,12 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from parley.api import dashboard_routes, twilio_routes, webrtc_routes
+from parley.api import dashboard_routes, outbound_routes, twilio_routes, webrtc_routes
 from parley.api.store import CallStore
 from parley.config import get_settings, load_business
+from parley.core.outbound.queue import OutboundQueue
+from parley.core.outbound.store import OutboundStore
+from parley.core.outbound.worker import build_outbound_queue
 
 try:
     from parley.core.brain import Agent
@@ -25,11 +28,13 @@ def create_app(
     *,
     agent: Agent | None = None,
     store: CallStore | None = None,
+    outbound_queue: OutboundQueue | None = None,
 ) -> FastAPI:
     """Create and configure the Parley FastAPI application."""
     initial_settings = get_settings()
     initial_business = load_business(initial_settings.business_config)
     owns_store = store is None
+    owns_outbound_store = outbound_queue is None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -46,13 +51,34 @@ def create_app(
         if getattr(app.state, "store", None) is None:
             app.state.store = CallStore(settings.database_url)
 
+        if getattr(app.state, "outbound_store", None) is None:
+            app.state.outbound_store = OutboundStore(settings.database_url)
+
+        if getattr(app.state, "outbound_queue", None) is None:
+            app.state.outbound_queue = build_outbound_queue(
+                settings=settings,
+                store=app.state.outbound_store,
+            )
+
         await app.state.store.init()
+        await app.state.outbound_store.init()
+
+        active_agent = getattr(app.state, "agent", None)
+        if (
+            active_agent is not None
+            and hasattr(active_agent, "resources")
+            and isinstance(active_agent.resources, dict)
+        ):
+            active_agent.resources["outbound_store"] = app.state.outbound_store
+
         logger.info("parley_server_started", business=business.business)
         try:
             yield
         finally:
             if owns_store and getattr(app.state, "store", None) is not None:
                 await app.state.store.close()
+            if owns_outbound_store and getattr(app.state, "outbound_store", None) is not None:
+                await app.state.outbound_store.close()
 
     app = FastAPI(title="Parley Voice Agent", lifespan=lifespan)
 
@@ -61,6 +87,22 @@ def create_app(
     app.state.business = initial_business
     app.state.agent = agent
     app.state.store = store or CallStore(initial_settings.database_url)
+    if outbound_queue is not None:
+        app.state.outbound_queue = outbound_queue
+        app.state.outbound_store = outbound_queue.store
+        app.state.outbound_queue_injected = True
+    else:
+        db_url = store.database_url if store is not None else initial_settings.database_url
+        default_outbound_store = OutboundStore(db_url)
+        app.state.outbound_store = default_outbound_store
+        app.state.outbound_queue = build_outbound_queue(
+            settings=initial_settings,
+            store=default_outbound_store,
+        )
+        app.state.outbound_queue_injected = False
+
+    if agent is not None and hasattr(agent, "resources") and isinstance(agent.resources, dict):
+        agent.resources["outbound_store"] = app.state.outbound_store
 
     app.add_middleware(
         CORSMiddleware,
@@ -103,6 +145,7 @@ def create_app(
     app.include_router(twilio_routes.router)
     app.include_router(webrtc_routes.router)
     app.include_router(dashboard_routes.router)
+    app.include_router(outbound_routes.router)
     webrtc_routes.mount_webrtc_ui(app)
 
     return app

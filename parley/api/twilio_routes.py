@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import secrets
 import time
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import structlog
@@ -19,6 +20,10 @@ from twilio.rest import Client as TwilioClient
 from twilio.twiml.voice_response import Connect, Dial, VoiceResponse
 
 from parley.config import BusinessConfig, Settings, get_settings, load_business
+from parley.core.outbound.models import Outcome
+from parley.core.outbound.queue import OutboundQueue
+from parley.core.outbound.voicemail import voicemail_twiml
+from parley.core.outbound.worker import build_outbound_queue
 from parley.core.pipeline.bot import CallControl, run_call
 
 logger = structlog.get_logger(__name__)
@@ -40,6 +45,34 @@ def _get_settings_and_business(app: Any) -> tuple[Settings, BusinessConfig]:
         settings.business_config
     )
     return settings, business
+
+
+async def _get_outbound_queue(app: Any) -> OutboundQueue:
+    settings, _ = _get_settings_and_business(app)
+    queue: OutboundQueue | None = getattr(app.state, "outbound_queue", None)
+    if queue is None:
+        store = getattr(app.state, "outbound_store", None)
+        queue = build_outbound_queue(settings=settings, store=store)
+        app.state.outbound_queue = queue
+        app.state.outbound_store = queue.store
+    else:
+        queue.settings = settings
+        queue.compliance.settings = settings
+    await queue.store.init()
+    return queue
+
+
+def _disposition_to_outcome(disposition: str | None) -> Outcome:
+    mapping: dict[str, Outcome] = {
+        "do_not_call": "do_not_call",
+        "not_interested": "not_interested",
+        "callback_booked": "booked",
+        "voicemail": "voicemail",
+        "no_answer": "no_answer",
+    }
+    if disposition and disposition in mapping:
+        return mapping[disposition]
+    return "completed"
 
 
 def _public_ws_url(public_base_url: str) -> str:
@@ -104,6 +137,138 @@ async def twilio_voice_webhook(request: Request) -> Response:
     vr.append(connect)
 
     return Response(content=str(vr), media_type="application/xml")
+
+
+@router.post("/outbound/{job_id}")
+async def twilio_outbound_webhook(job_id: str, request: Request) -> Response:
+    """Twilio outbound answer webhook returning <Connect><Stream> TwiML with job context."""
+    settings, _ = _get_settings_and_business(request.app)
+    base_url = settings.public_base_url.rstrip("/")
+    await _validate_twilio_signature(request, f"{base_url}/twilio/outbound/{job_id}")
+
+    form = await request.form()
+    call_sid = str(form.get("CallSid", ""))
+    to_number = str(form.get("To", ""))
+
+    queue = await _get_outbound_queue(request.app)
+    job = await queue.store.get_job(settings.tenant_id, job_id)
+    if job is None:
+        job = await queue.store.get_job_by_id(job_id)
+
+    goal = job.goal if job is not None else ""
+    if job is not None and job.contact.phone:
+        to_number = job.contact.phone
+
+    now = time.time()
+    expired_keys = [k for k, v in STREAM_TOKENS.items() if float(v.get("expires", 0)) <= now]
+    for k in expired_keys:
+        STREAM_TOKENS.pop(k, None)
+
+    stream_token = secrets.token_urlsafe(24)
+    STREAM_TOKENS[stream_token] = {
+        "call_sid": call_sid,
+        "from": to_number,
+        "to": to_number,
+        "direction": "outbound",
+        "job_id": job_id,
+        "goal": goal,
+        "expires": now + 120.0,
+    }
+
+    ws_url = _public_ws_url(settings.public_base_url)
+
+    vr = VoiceResponse()
+    connect = Connect()
+    stream = connect.stream(url=ws_url)
+    stream.parameter(name="token", value=stream_token)
+    stream.parameter(name="direction", value="outbound")
+    stream.parameter(name="job_id", value=job_id)
+    stream.parameter(name="goal", value=goal)
+    stream.parameter(name="to", value=to_number)
+    stream.parameter(name="call_sid", value=call_sid)
+    vr.append(connect)
+
+    return Response(content=str(vr), media_type="application/xml")
+
+
+@router.post("/amd/{job_id}")
+async def twilio_amd_webhook(job_id: str, request: Request) -> Response:
+    """Twilio async answering-machine detection callback."""
+    settings, business = _get_settings_and_business(request.app)
+    base_url = settings.public_base_url.rstrip("/")
+    await _validate_twilio_signature(request, f"{base_url}/twilio/amd/{job_id}")
+
+    form = await request.form()
+    answered_by = str(form.get("AnsweredBy", "")).lower()
+    call_sid = str(form.get("CallSid", ""))
+
+    machine_values = {
+        "machine_end_beep",
+        "machine_end_silence",
+        "machine_end_other",
+        "fax",
+    }
+    if answered_by in machine_values:
+        queue = await _get_outbound_queue(request.app)
+        job = await queue.store.get_job(settings.tenant_id, job_id)
+        if job is None:
+            job = await queue.store.get_job_by_id(job_id)
+        goal = job.goal if job is not None else "your recent inquiry"
+        twiml_str = voicemail_twiml(
+            business.business,
+            goal,
+            settings.twilio_phone_number or "",
+        )
+
+        if call_sid:
+
+            def _update_voicemail() -> None:
+                client = TwilioClient(
+                    settings.twilio_account_sid,
+                    settings.twilio_auth_token,
+                )
+                client.calls(call_sid).update(twiml=twiml_str)
+
+            try:
+                await asyncio.to_thread(_update_voicemail)
+            except Exception:
+                logger.exception("twilio_amd_update_failed", call_id=call_sid, job_id=job_id)
+
+        try:
+            await queue.on_call_finished(job_id, "voicemail", datetime.now(UTC))
+        except KeyError:
+            logger.warning("twilio_amd_job_not_found", job_id=job_id)
+
+    return Response(status_code=204)
+
+
+@router.post("/status/{job_id}")
+async def twilio_status_webhook(job_id: str, request: Request) -> Response:
+    """Twilio CallStatus callback for unanswered, busy, failed, or canceled outbound calls."""
+    settings, _ = _get_settings_and_business(request.app)
+    base_url = settings.public_base_url.rstrip("/")
+    await _validate_twilio_signature(request, f"{base_url}/twilio/status/{job_id}")
+
+    form = await request.form()
+    call_status = str(form.get("CallStatus", "")).lower()
+
+    status_map: dict[str, Outcome] = {
+        "no-answer": "no_answer",
+        "no_answer": "no_answer",
+        "busy": "busy",
+        "failed": "failed",
+        "canceled": "failed",
+        "cancelled": "failed",
+    }
+    mapped_outcome = status_map.get(call_status)
+    if mapped_outcome is not None:
+        queue = await _get_outbound_queue(request.app)
+        try:
+            await queue.on_call_finished(job_id, mapped_outcome, datetime.now(UTC))
+        except KeyError:
+            logger.warning("twilio_status_job_not_found", job_id=job_id)
+
+    return Response(status_code=204)
 
 
 async def twilio_transfer(
@@ -196,7 +361,16 @@ async def twilio_media_websocket(websocket: WebSocket) -> None:
         return
 
     call_sid: str = str(record["call_sid"])
-    caller_number: str = str(record.get("from") or "")
+    direction_raw = str(record.get("direction") or "inbound")
+    direction: Literal["inbound", "outbound"] = (
+        "outbound" if direction_raw == "outbound" else "inbound"
+    )
+    job_id: str | None = str(record["job_id"]) if record.get("job_id") else None
+    outbound_goal: str | None = str(record["goal"]) if record.get("goal") is not None else None
+    if direction == "outbound":
+        caller_number: str = str(record.get("to") or record.get("from") or "")
+    else:
+        caller_number = str(record.get("from") or "")
 
     # Disable auto_hang_up if Twilio REST credentials are not set to avoid ValueError in 1.13.
     has_twilio_creds = bool(settings.twilio_account_sid and settings.twilio_auth_token)
@@ -222,17 +396,39 @@ async def twilio_media_websocket(websocket: WebSocket) -> None:
         return await twilio_transfer(cid, summary, settings=settings, business=business)
 
     _active_phone_calls += 1
+    final_state = None
     try:
-        await run_call(
+        final_state = await run_call(
             transport,
             agent=websocket.app.state.agent,
             call_id=call_sid,
             channel="phone",
-            direction="inbound",
+            direction=direction,
             caller_number=caller_number,
             audio_sample_rate=8000,
             control=CallControl(transfer=_transfer_cb),
             store=getattr(websocket.app.state, "store", None),
+            outbound_goal=outbound_goal,
         )
     finally:
         _active_phone_calls -= 1
+        if direction == "outbound" and job_id:
+            disp = final_state.disposition if final_state is not None else None
+            # Detached task: the handler is usually cancelled when the socket closes (and anyio
+            # re-cancels every await in this finally), but the outcome (retries, DNC) must be saved.
+            task = asyncio.create_task(
+                _record_outbound_outcome(websocket.app, job_id, _disposition_to_outcome(disp))
+            )
+            _BACKGROUND_TASKS.add(task)
+            task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+async def _record_outbound_outcome(app: Any, job_id: str, outcome: str) -> None:
+    try:
+        queue = await _get_outbound_queue(app)
+        await queue.on_call_finished(job_id, outcome, datetime.now(UTC))
+    except Exception:
+        logger.exception("outbound_ws_call_finished_error", job_id=job_id)

@@ -24,6 +24,8 @@ def main() -> None:
     p_eval.add_argument("--suite", default="smoke", help="smoke | full | <scenario id glob>")
     p_eval.add_argument("--concurrency", type=int, default=4)
 
+    sub.add_parser("worker", help="run the outbound calling arq worker")
+
     args = parser.parse_args()
     if args.cmd == "chat":
         from parley.core.brain.repl import run_repl
@@ -41,6 +43,10 @@ def main() -> None:
         from evals.runner import main as eval_main
 
         asyncio.run(eval_main(suite=args.suite, concurrency=args.concurrency))
+    elif args.cmd == "worker":
+        from parley.core.outbound.worker import run_worker
+
+        run_worker()
 
 
 if __name__ == "__main__":

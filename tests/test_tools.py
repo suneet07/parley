@@ -55,6 +55,7 @@ async def test_registry_loads_tools_and_handles_duplicates_and_unknown(
         "issue_refund",
         "lookup_order",
         "offer_store_credit",
+        "opt_out",
         "search_kb",
         "start_return",
         "track_shipment",
@@ -70,9 +71,9 @@ async def test_registry_loads_tools_and_handles_duplicates_and_unknown(
     assert reg2.resources_factory is not None
     assert reg2.caller_lookup is not None
 
-    # Schemas include all 11 tools + confirm_action
+    # Schemas include all 12 tools + confirm_action
     schema_names = [s["function"]["name"] for s in gw.schemas()]
-    assert len(schema_names) == 12
+    assert len(schema_names) == 13
     assert "confirm_action" in schema_names
 
     # Unknown tool in business.tools raises ValueError
